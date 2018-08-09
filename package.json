@@ -1,0 +1,29 @@
+{
+  "name": "puppeteer-check-site",
+  "version": "1.0.0",
+  "description": "Check your site for link errors with Puppeteer",
+  "main": "check-site.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikko-apo/puppeteer-check-site.git"
+  },
+  "keywords": [
+    "Puppeteer",
+    "check",
+    "links"
+  ],
+  "author": "Mikko Apo",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/mikko-apo/puppeteer-check-site/issues"
+  },
+  "homepage": "https://github.com/mikko-apo/puppeteer-check-site#readme",
+  "devDependencies": {
+    "express": "4.16.3",
+    "mocha": "5.2.0",
+    "puppeteer": "1.6.1"
+  }
+}
