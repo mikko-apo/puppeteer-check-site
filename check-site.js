@@ -289,11 +289,11 @@ function pretty(obj) {
   return JSON.stringify(obj, null, 2)
 }
 
-async function crawl(url, params = {ignore: []}) {
+async function crawl(url, params = {ignore: [], headless: true, devtools: false}) {
   return crawler(params).crawl(url)
 }
 
-function crawler(params = {ignore: []}) {
+function crawler(params = {ignore: [], headless: true, devtools: false}) {
   let browser, page;
   return {
     todo: [],
@@ -303,7 +303,7 @@ function crawler(params = {ignore: []}) {
     params: params,
     crawl: async function (root) {
       if (!browser) {
-        browser = await puppeteer.launch({headless: true, devtools: false});
+        browser = await puppeteer.launch(this.params);
       }
       if (!page) {
         page = await browser.newPage();
