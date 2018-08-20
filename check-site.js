@@ -1,7 +1,7 @@
 const puppeteer = require('puppeteer');
 
 function debug(...args) {
-//  info(...args)
+  //info(...args)
 }
 
 function info(...args) {
@@ -33,26 +33,48 @@ async function waitUntilEmpty(arr) {
           debug("Waiting for request to finish", arr)
           setTimeout(f, 1000);
         }
-      }
+      };
       setTimeout(f, 100);
     }
   );
 }
 
-async function crawlUrl(page, crawlUrl) {
+async function crawlUrl(page, crawlUrl, params) {
   const succeeded = [];
   const failed = [];
   const openRequestUrls = [];
+  const pageErrors = [];
+  const errors = [];
+  const ignored = []
 
-  function isExcludedUrl(url) {
-    return url.includes('linkedin');
+  function matches(pattern, string) {
+    if (typeof pattern === "function") {
+      return pattern(string)
+    }
+    if (pattern instanceof RegExp) {
+      return pattern.test(string)
+    }
+    return string.includes(pattern);
+  }
+
+  function isIgnored(url) {
+    for (ignore of params.ignore || []) {
+      if (matches(ignore, url)) {
+        if (!ignored.includes(url)) {
+          ignored.push(url)
+        }
+        return true;
+      }
+    }
+    return false;
   }
 
   const requestListener = request => {
     const url = request.url();
     debug("request started", url)
-    if (isExcludedUrl(url)) {
+    if (isIgnored(url)) {
       request.abort();
+      info(" - aborting request because url is ignored", url)
     } else {
       openRequestUrls.push(url);
       request.continue();
@@ -63,7 +85,7 @@ async function crawlUrl(page, crawlUrl) {
     const url = request.url();
     debug("request failed", url)
     removeFromArray(openRequestUrls, url);
-    if (!isExcludedUrl(url)) {
+    if (!isIgnored(url)) {
       info("- failed", url, "errorText", request.failure().errorText)
       failed.push({
         url: url,
@@ -74,8 +96,8 @@ async function crawlUrl(page, crawlUrl) {
 
   function requestFinishedListener(request) {
     const url = request.url();
-    debug("request finished", url)
     removeFromArray(openRequestUrls, url);
+    debug("request finished", url, "unfinished", openRequestUrls)
   }
 
   function responseListener(response) {
@@ -88,11 +110,41 @@ async function crawlUrl(page, crawlUrl) {
     }
   }
 
+  function errorListener(error) {
+    const ret = {}
+    const message = error.message;
+    const stack = error.stack;
+    if (message && message !== "") {
+      ret.message = message;
+    }
+    if (stack && stack !== "") {
+      ret.stack = stack;
+    }
+    pageErrors.push(ret);
+    info("- error", error.message)
+  }
+
+  function pageErrorListener(error) {
+    const ret = {}
+    const message = error.message;
+    const stack = error.stack;
+    if (message && message !== "") {
+      ret.message = message;
+    }
+    if (stack && stack !== "") {
+      ret.stack = stack;
+    }
+    pageErrors.push(ret);
+    info("- pageerror", error.message)
+  }
+
   page.setRequestInterception(true);
   page.on('request', requestListener);
   page.on('requestfailed', requestFailedListener);
   page.on('response', responseListener);
   page.on('requestfinished', requestFinishedListener);
+  page.on('pageerror', pageErrorListener);
+  page.on('error', errorListener);
 //    page.on('request', request => { console.log("REQ: " + request.url()); });
 
   try {
@@ -105,24 +157,51 @@ async function crawlUrl(page, crawlUrl) {
     page.removeListener('requestfailed', requestFailedListener);
     page.removeListener('requestfinished', requestFinishedListener);
     page.removeListener('response', responseListener);
+    page.removeListener('pageerror', pageErrorListener);
+    page.removeListener('error', errorListener);
   }
-  const hrefs = await page.evaluate(() => {
+
+  const finalUrl = page.url();
+  let pageResult = {url: finalUrl};
+  if (finalUrl != crawlUrl) {
+    pageResult.originalUrl = crawlUrl;
+  }
+
+  const hrefs = [];
+  const pageHrefs = await page.evaluate(() => {
     const anchors = document.querySelectorAll('a');
     return [].map.call(anchors, a => a.href);
   });
-//    await page.screenshot({path: 'example.png'});
+  for (const href of pageHrefs) {
+    const url = new URL(href, finalUrl);
+    const urlString = url.toString();
+    if (isIgnored(urlString)) {
+      info("- ignoring href", urlString)
+    } else {
+      hrefs.push(href)
+    }
+  }
+  ;
 
-  let ret = {url: crawlUrl};
+  if (hrefs.length > 0) {
+    pageResult.hrefs = hrefs;
+  }
   if (succeeded.length > 0) {
-    ret.succeeded = succeeded;
+    pageResult.succeeded = succeeded;
   }
   if (failed.length > 0) {
-    ret.failed = failed;
+    pageResult.failed = failed;
   }
-  if (hrefs.length > 0) {
-    ret.hrefs = hrefs;
+  if (ignored.length > 0) {
+    pageResult.ignored = ignored;
   }
-  return ret;
+  if (pageErrors.length > 0) {
+    pageResult.pageErrors = pageErrors;
+  }
+  if (errors.length > 0) {
+    pageResult.errors = errors;
+  }
+  return pageResult;
 }
 
 function urlToPrefix(url) {
@@ -191,7 +270,7 @@ async function crawlUrls(state, page, root) {
     const url = state.todo.shift();
     info("check", url, "checked", Object.keys(state.checked).length, "todo", state.todo.length, "unique errors", uniqueErrors(state.results))
     state.processing.push(url)
-    const urlResults = await crawlUrl(page, url);
+    const urlResults = await crawlUrl(page, url, state.params);
     removeFromArray(state.processing, url);
     state.results.push(urlResults);
     state.checked[url] = true;
@@ -210,20 +289,21 @@ function pretty(obj) {
   return JSON.stringify(obj, null, 2)
 }
 
-async function crawl(url) {
-  return crawler().crawl(url)
+async function crawl(url, params = {ignore: []}) {
+  return crawler(params).crawl(url)
 }
 
-function crawler() {
+function crawler(params = {ignore: []}) {
   let browser, page;
   return {
     todo: [],
     results: [],
     checked: {},
     processing: [],
+    params: params,
     crawl: async function (root) {
       if (!browser) {
-        browser = await puppeteer.launch({headless: false});
+        browser = await puppeteer.launch({headless: true, devtools: false});
       }
       if (!page) {
         page = await browser.newPage();
