@@ -24,6 +24,6 @@
   "devDependencies": {
     "express": "4.16.3",
     "mocha": "5.2.0",
-    "puppeteer": "1.6.1"
+    "puppeteer": "1.7.0"
   }
 }
