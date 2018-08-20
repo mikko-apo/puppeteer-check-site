@@ -154,7 +154,7 @@ function collectErrors(result) {
   for (const pageResult of result) {
     for (const failed of pageResult.failed || []) {
       const failedUrl = failed.url
-      if (!ret.failedUrl) {
+      if (!ret[failedUrl]) {
         ret[failedUrl] = {}
       }
       if (pageResult.url !== failedUrl) {
@@ -223,7 +223,7 @@ function crawler() {
     processing: [],
     crawl: async function (root) {
       if (!browser) {
-        browser = await puppeteer.launch({headless: true});
+        browser = await puppeteer.launch({headless: false});
       }
       if (!page) {
         page = await browser.newPage();
