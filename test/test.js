@@ -103,3 +103,40 @@ describe('Ignore urls', () => {
     }])
   })
 });
+
+describe("Commandline", () => {
+  const cmd = require('../check-site');
+  let collectectedUrls;
+  let expectedParams;
+
+  cmd.crawler = (params) => {
+    eq(params, expectedParams);
+    return {
+      crawl: (url) => {
+        collectectedUrls.push(url)
+      }
+    }
+  };
+
+  beforeEach(() => {
+    collectectedUrls = [];
+    expectedParams = {}
+  });
+
+  it('single host', async () => {
+    cmd.startCommandLine(["localhost"]);
+    await eq(collectectedUrls, ["localhost"])
+  });
+
+  it('single host debug', async () => {
+    expectedParams = {"debug": true};
+    await cmd.startCommandLine(["localhost", "debug:true"]);
+    eq(collectectedUrls, ["localhost"])
+  });
+
+  it('two hosts ignore', async () => {
+    expectedParams = {"ignore": ["test", /pow:pow/]};
+    await cmd.startCommandLine(["localhost", "foo", "ignore:test,/pow:pow/"]);
+    eq(collectectedUrls, ["localhost", "foo"])
+  })
+});

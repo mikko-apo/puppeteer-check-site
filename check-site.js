@@ -1,8 +1,12 @@
 const puppeteer = require('puppeteer');
 
 function debug(...args) {
-  //info(...args)
+  if(debug.debugOn) {
+    info(...args)
+  }
 }
+
+debug.debugOn = false;
 
 function info(...args) {
   console.log(...args);
@@ -14,7 +18,7 @@ async function scrollToEnd(page) {
   while (scroll) {
     await page.evaluate('window.scrollBy(0, window.innerHeight)');
     let currentPosition = await page.evaluate('window.pageYOffset');
-    if (currentPosition != originalPosition) {
+    if (currentPosition !== originalPosition) {
       await page.waitFor(100);
       originalPosition = currentPosition;
     } else {
@@ -25,16 +29,16 @@ async function scrollToEnd(page) {
 }
 
 async function waitUntilEmpty(arr) {
-  return new Promise((resolve, reject) => {
-      const f = () => {
+  return new Promise((resolve) => {
+      const waitForRequestToFinish = () => {
         if (arr.length === 0) {
           resolve();
         } else {
-          debug("Waiting for request to finish", arr)
-          setTimeout(f, 1000);
+          debug("Waiting for request to finish", arr);
+          setTimeout(waitForRequestToFinish, 1000);
         }
       };
-      setTimeout(f, 100);
+      setTimeout(waitForRequestToFinish, 100);
     }
   );
 }
@@ -45,10 +49,10 @@ async function crawlUrl(page, crawlUrl, params) {
   const openRequestUrls = [];
   const pageErrors = [];
   const errors = [];
-  const ignored = []
+  const ignored = [];
 
   function matches(pattern, string) {
-    if (typeof pattern === "function") {
+    if (typeof(pattern) === "function") {
       return pattern(string)
     }
     if (pattern instanceof RegExp) {
@@ -58,7 +62,7 @@ async function crawlUrl(page, crawlUrl, params) {
   }
 
   function isIgnored(url) {
-    for (ignore of params.ignore || []) {
+    for (const ignore of params.ignore || []) {
       if (matches(ignore, url)) {
         if (!ignored.includes(url)) {
           ignored.push(url)
@@ -71,7 +75,7 @@ async function crawlUrl(page, crawlUrl, params) {
 
   const requestListener = request => {
     const url = request.url();
-    debug("request started", url)
+    debug("request started", url);
     if (isIgnored(url)) {
       request.abort();
       info(" - aborting request because url is ignored", url)
@@ -83,10 +87,10 @@ async function crawlUrl(page, crawlUrl, params) {
 
   function requestFailedListener(request) {
     const url = request.url();
-    debug("request failed", url)
+    debug("request failed", url);
     removeFromArray(openRequestUrls, url);
     if (!isIgnored(url)) {
-      info("- failed", url, "errorText", request.failure().errorText)
+      info("- failed", url, "errorText", request.failure().errorText);
       failed.push({
         url: url,
         errorText: request.failure().errorText
@@ -101,17 +105,17 @@ async function crawlUrl(page, crawlUrl, params) {
   }
 
   function responseListener(response) {
-    debug("response", response.url())
+    debug("response", response.url());
     if ([200, 204, 206, 301, 302, 304].includes(response.status())) {
       succeeded.push(response.url());
     } else {
-      info("- failed", response.url(), "status", response.status())
+      info("- failed", response.url(), "status", response.status());
       failed.push({url: response.url(), status: response.status()});
     }
   }
 
   function errorListener(error) {
-    const ret = {}
+    const ret = {};
     const message = error.message;
     const stack = error.stack;
     if (message && message !== "") {
@@ -125,7 +129,7 @@ async function crawlUrl(page, crawlUrl, params) {
   }
 
   function pageErrorListener(error) {
-    const ret = {}
+    const ret = {};
     const message = error.message;
     const stack = error.stack;
     if (message && message !== "") {
@@ -163,7 +167,7 @@ async function crawlUrl(page, crawlUrl, params) {
 
   const finalUrl = page.url();
   let pageResult = {url: finalUrl};
-  if (finalUrl != crawlUrl) {
+  if (finalUrl !== crawlUrl) {
     pageResult.originalUrl = crawlUrl;
   }
 
@@ -181,7 +185,6 @@ async function crawlUrl(page, crawlUrl, params) {
       hrefs.push(href)
     }
   }
-  ;
 
   if (hrefs.length > 0) {
     pageResult.hrefs = hrefs;
@@ -229,10 +232,10 @@ function updateTodo(state, currentUrl, hrefs, root) {
 }
 
 function collectErrors(result) {
-  const ret = {}
+  const ret = {};
   for (const pageResult of result) {
     for (const failed of pageResult.failed || []) {
-      const failedUrl = failed.url
+      const failedUrl = failed.url;
       if (!ret[failedUrl]) {
         ret[failedUrl] = {}
       }
@@ -268,8 +271,8 @@ function removeFromArray(arr, obj) {
 async function crawlUrls(state, page, root) {
   do {
     const url = state.todo.shift();
-    info("check", url, "checked", Object.keys(state.checked).length, "todo", state.todo.length, "unique errors", uniqueErrors(state.results))
-    state.processing.push(url)
+    info("check", url, "checked", Object.keys(state.checked).length, "todo", state.todo.length, "unique errors", uniqueErrors(state.results));
+    state.processing.push(url);
     const urlResults = await crawlUrl(page, url, state.params);
     removeFromArray(state.processing, url);
     state.results.push(urlResults);
@@ -279,9 +282,9 @@ async function crawlUrls(state, page, root) {
     }
     info("errors", pretty(collectErrors(state.results)))
   } while (state.todo.length !== 0);
-  info("checked", Object.keys(state.checked).length, "unique errors", uniqueErrors(state.results))
-  info("errors", collectErrors(state.results))
-  info("results", state.results)
+  info("checked", Object.keys(state.checked).length, "unique errors", uniqueErrors(state.results));
+  info("errors", collectErrors(state.results));
+  info("results", state.results);
   return state.results;
 }
 
@@ -289,12 +292,17 @@ function pretty(obj) {
   return JSON.stringify(obj, null, 2)
 }
 
-async function crawl(url, params = {ignore: [], headless: true, devtools: false}) {
+const defaultParameters = {ignore: [], headless: true, devtools: false, debug: false};
+
+async function crawl(url, params = defaultParameters) {
   return crawler(params).crawl(url)
 }
 
-function crawler(params = {ignore: [], headless: true, devtools: false}) {
+function crawler(params = defaultParameters) {
   let browser, page;
+  if(params.debug) {
+    debug.debugOn = true;
+  }
   return {
     todo: [],
     results: [],
@@ -319,9 +327,36 @@ function crawler(params = {ignore: [], headless: true, devtools: false}) {
   };
 }
 
+async function startCommandLine(argv, crawlerF, defaultParameters) {
+  const urls = [];
+  const params = {};
+  for (const arg of argv) {
+    if (arg.includes(":") && defaultParameters.hasOwnProperty(arg.split(":")[0])) {
+      const [key, ...rest] = arg.split(":");
+      const defaultValue = defaultParameters[key];
+      let value = rest.join(":");
+      if (key === "ignore") {
+        value = value.split(",").map(s => /^\/.*\/$/.test(s) ? new RegExp(s.substr(1, s.length - 2)) : s)
+      } else if (typeof(defaultValue) === "boolean") {
+        value = JSON.parse(value)
+      }
+      params[key] = value
+    } else {
+      urls.push(arg)
+    }
+  }
+  if (urls.length > 0) {
+    const crawler = crawlerF(params);
+    for (const url of urls) {
+      await crawler.crawl(url)
+    }
+  }
+}
+
 if (module) {
   module.exports = {
     crawl: crawl,
-    crawler: crawler
+    crawler: crawler,
+    startCommandLine: async (argv) => startCommandLine(argv, module.exports.crawler, defaultParameters)
   }
 }
