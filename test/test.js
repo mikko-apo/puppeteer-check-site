@@ -3,14 +3,32 @@ const app = require('./testApp');
 const checkSite = require('../check-site');
 
 function eq(was, expected) {
-  was = JSON.stringify(was);
-  expected = JSON.stringify(expected);
+  was = JSON.stringify(was, null, 2);
+  expected = JSON.stringify(expected, null, 2);
   if (was !== expected) {
     throw new Error(was + " is not equal to expected " + expected);
   }
 }
 
-describe('Three pages, two links, one page that does not exist', () => {
+function containsInOrder(txt, ...rest) {
+  let prevIndex = undefined;
+  const found = []
+  for (const s of rest) {
+    const index = txt.indexOf(s, prevIndex ? prevIndex + 1 : 0);
+    if (index > (prevIndex || -1)) {
+      prevIndex = index;
+      found.push(s);
+    } else {
+      if (found.length > 0) {
+        throw new Error(`Could not find '${s}'. Found ${found.length} items in order: [${found.map(s => `'${s}'`)}] from '${txt}'`)
+      } else {
+        throw new Error(`Could not find '${s}' from '${txt}'`)
+      }
+    }
+  }
+}
+
+describe('Two pages, three links, one link that does not exist', () => {
   const pages = {
     a: {
       hrefs: ["b", "c"]
@@ -36,8 +54,16 @@ describe('Three pages, two links, one page that does not exist', () => {
 
   it('Should crawl linked pages', async () => {
     app.setPageData(pages);
-    const res = await checkSite.crawl(app.makeUrl("a"));
-    assert.deepEqual(res, expectedResult)
+    const crawler = checkSite.crawler();
+    const res = await crawler.crawl(app.makeUrl("a"));
+    assert.deepEqual(res, expectedResult);
+    containsInOrder(crawler.createReport(),
+      "Issues: 1", app.makeUrl("c"), "status: 404", "Linked by", app.makeUrl("a"),
+      "Checked 3 pages",
+      app.makeUrl("a"), "Links 2", app.makeUrl("b"), app.makeUrl("c"), "Loaded resources 1", app.makeUrl("a"),
+      app.makeUrl("b"), "Loaded resources 1", app.makeUrl("b"),
+      app.makeUrl("c"), "Failed resources 1", app.makeUrl("c"), "status: 404",
+    )
   })
 });
 
@@ -49,8 +75,8 @@ describe('Catch javascript errors', () => {
   };
   const expectedResult = [{
     "url": app.makeUrl("a"),
-    "succeeded": [app.makeUrl("a")],
-    "pageErrors": [{"message": "ReferenceError: pow is not defined\n    at " + app.makeUrl("a") + ":3:9"}]
+    "pageErrors": [{"message": "ReferenceError: pow is not defined\n    at " + app.makeUrl("a") + ":3:9"}],
+    "succeeded": [app.makeUrl("a")]
   }];
 
   it('Catch error', async () => {
@@ -70,8 +96,8 @@ describe('Ignore urls', () => {
     const res = await checkSite.crawl(app.makeUrl("a"), {ignore: ["twitter"]});
     eq(res, [{
       "url": app.makeUrl("a"),
-      "succeeded": [app.makeUrl("a")],
-      "ignored": [app.makeUrl("twitter")]
+      "ignored": [app.makeUrl("twitter")],
+      "succeeded": [app.makeUrl("a")]
     }])
   });
 
@@ -84,8 +110,8 @@ describe('Ignore urls', () => {
     const res = await checkSite.crawl(app.makeUrl("a"), {ignore: ["http://twitter.com"]});
     eq(res, [{
       "url": app.makeUrl("a"),
-      "succeeded": [app.makeUrl("a")],
-      "ignored": ["http://twitter.com/"]
+      "ignored": ["http://twitter.com/"],
+      "succeeded": [app.makeUrl("a")]
     }])
   });
 
@@ -98,8 +124,8 @@ describe('Ignore urls', () => {
     const res = await checkSite.crawl(app.makeUrl("a"), {ignore: ["test.js"]});
     eq(res, [{
       "url": app.makeUrl("a"),
-      "succeeded": [app.makeUrl("a")],
-      "ignored": [app.makeUrl("test.js")]
+      "ignored": [app.makeUrl("test.js")],
+      "succeeded": [app.makeUrl("a")]
     }])
   })
 });
@@ -109,16 +135,16 @@ describe("Commandline", () => {
   let collectectedUrls;
   let expectedParams;
 
-  cmd.crawler = (params) => {
-    eq(params, expectedParams);
-    return {
-      crawl: (url) => {
-        collectectedUrls.push(url)
-      }
-    }
-  };
-
   beforeEach(() => {
+    cmd.crawler = (params) => {
+      eq(params, expectedParams);
+      return {
+        crawl: (url) => {
+          collectectedUrls.push(url)
+        }
+      }
+    };
+
     collectectedUrls = [];
     expectedParams = {}
   });

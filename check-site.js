@@ -1,7 +1,9 @@
 const puppeteer = require('puppeteer');
+const Handlebars = require('handlebars');
+const fs = require('fs');
 
 function debug(...args) {
-  if(debug.debugOn) {
+  if (debug.debugOn) {
     info(...args)
   }
 }
@@ -43,6 +45,23 @@ async function waitUntilEmpty(arr) {
   );
 }
 
+function matches(pattern, string) {
+  if (typeof(pattern) === "function") {
+    return pattern(string)
+  }
+  if (pattern instanceof RegExp) {
+    return pattern.test(string)
+  }
+  return string.includes(pattern);
+}
+
+Handlebars.registerHelper('link', function (url) {
+  return new Handlebars.SafeString(
+    '<a href="' + url + '">'
+    + url
+    + '</a>');
+});
+
 async function crawlUrl(page, crawlUrl, params) {
   const succeeded = [];
   const failed = [];
@@ -50,16 +69,6 @@ async function crawlUrl(page, crawlUrl, params) {
   const pageErrors = [];
   const errors = [];
   const ignored = [];
-
-  function matches(pattern, string) {
-    if (typeof(pattern) === "function") {
-      return pattern(string)
-    }
-    if (pattern instanceof RegExp) {
-      return pattern.test(string)
-    }
-    return string.includes(pattern);
-  }
 
   function isIgnored(url) {
     for (const ignore of params.ignore || []) {
@@ -73,7 +82,7 @@ async function crawlUrl(page, crawlUrl, params) {
     return false;
   }
 
-  const requestListener = request => {
+  function requestListener(request) {
     const url = request.url();
     debug("request started", url);
     if (isIgnored(url)) {
@@ -83,7 +92,7 @@ async function crawlUrl(page, crawlUrl, params) {
       openRequestUrls.push(url);
       request.continue();
     }
-  };
+  }
 
   function requestFailedListener(request) {
     const url = request.url();
@@ -142,126 +151,116 @@ async function crawlUrl(page, crawlUrl, params) {
     info("- pageerror", error.message)
   }
 
-  page.setRequestInterception(true);
-  page.on('request', requestListener);
-  page.on('requestfailed', requestFailedListener);
-  page.on('response', responseListener);
-  page.on('requestfinished', requestFinishedListener);
-  page.on('pageerror', pageErrorListener);
-  page.on('error', errorListener);
+  async function processPage(page) {
+    page.setRequestInterception(true);
+    page.on('request', requestListener);
+    page.on('requestfailed', requestFailedListener);
+    page.on('response', responseListener);
+    page.on('requestfinished', requestFinishedListener);
+    page.on('pageerror', pageErrorListener);
+    page.on('error', errorListener);
 //    page.on('request', request => { console.log("REQ: " + request.url()); });
 
-  try {
-    await page.goto(crawlUrl, {waitUntil: 'networkidle0'});
-    await waitUntilEmpty(openRequestUrls);
-    await scrollToEnd(page);
-    await waitUntilEmpty(openRequestUrls);
-  } finally {
-    page.removeListener('request', requestListener);
-    page.removeListener('requestfailed', requestFailedListener);
-    page.removeListener('requestfinished', requestFinishedListener);
-    page.removeListener('response', responseListener);
-    page.removeListener('pageerror', pageErrorListener);
-    page.removeListener('error', errorListener);
-  }
-
-  const finalUrl = page.url();
-  let pageResult = {url: finalUrl};
-  if (finalUrl !== crawlUrl) {
-    pageResult.originalUrl = crawlUrl;
-  }
-
-  const hrefs = [];
-  const pageHrefs = await page.evaluate(() => {
-    const anchors = document.querySelectorAll('a');
-    return [].map.call(anchors, a => a.href);
-  });
-  for (const href of pageHrefs) {
-    const url = new URL(href, finalUrl);
-    const urlString = url.toString();
-    if (isIgnored(urlString)) {
-      info("- ignoring href", urlString)
-    } else {
-      hrefs.push(href)
+    try {
+      await page.goto(crawlUrl, {waitUntil: 'networkidle0'});
+      await waitUntilEmpty(openRequestUrls);
+      await scrollToEnd(page);
+      await waitUntilEmpty(openRequestUrls);
+    } finally {
+      page.removeListener('request', requestListener);
+      page.removeListener('requestfailed', requestFailedListener);
+      page.removeListener('requestfinished', requestFinishedListener);
+      page.removeListener('response', responseListener);
+      page.removeListener('pageerror', pageErrorListener);
+      page.removeListener('error', errorListener);
     }
   }
 
-  if (hrefs.length > 0) {
-    pageResult.hrefs = hrefs;
-  }
-  if (succeeded.length > 0) {
-    pageResult.succeeded = succeeded;
-  }
-  if (failed.length > 0) {
-    pageResult.failed = failed;
-  }
-  if (ignored.length > 0) {
-    pageResult.ignored = ignored;
-  }
-  if (pageErrors.length > 0) {
-    pageResult.pageErrors = pageErrors;
-  }
-  if (errors.length > 0) {
-    pageResult.errors = errors;
-  }
-  return pageResult;
-}
+  async function createResult(page) {
+    const finalUrl = page.url();
+    let pageResult = {url: finalUrl};
+    if (finalUrl !== crawlUrl) {
+      pageResult.originalUrl = crawlUrl;
+    }
 
-function urlToPrefix(url) {
-  let s = url.protocol + "//";
-  if (url.auth) {
-    s = s + url.auth + "@";
-  }
-  return s + url.host;
-}
-
-function updateTodo(state, currentUrl, hrefs, root) {
-  const rootUrl = new URL(root);
-  const rootUrlStart = urlToPrefix(rootUrl);
-
-  for (const href of hrefs) {
-    const url = new URL(href, currentUrl);
-    const urlString = url.toString();
-    const urlStart = urlToPrefix(url);
-    if (!state.checked.hasOwnProperty(urlString) && !state.todo.includes(urlString)) {
-      if (rootUrlStart.valueOf() === urlStart.valueOf()) {
-        state.todo.push(urlString)
+    const hrefs = [];
+    const pageHrefs = await page.evaluate(() => {
+      const anchors = document.querySelectorAll('a');
+      return [].map.call(anchors, a => a.href);
+    });
+    for (const href of pageHrefs) {
+      const url = new URL(href, finalUrl);
+      const urlString = url.toString();
+      if (isIgnored(urlString)) {
+        info("- ignoring href", urlString)
+      } else {
+        hrefs.push(href)
       }
     }
+
+    if (errors.length > 0) {
+      pageResult.errors = errors;
+    }
+    if (pageErrors.length > 0) {
+      pageResult.pageErrors = pageErrors;
+    }
+    if (failed.length > 0) {
+      pageResult.failed = failed;
+    }
+    if (ignored.length > 0) {
+      pageResult.ignored = ignored;
+    }
+    if (hrefs.length > 0) {
+      pageResult.hrefs = hrefs;
+    }
+    if (succeeded.length > 0) {
+      pageResult.succeeded = succeeded;
+    }
+    return pageResult;
   }
+
+  await processPage(page);
+  return await createResult(page);
 }
 
-function collectErrors(result) {
-  const ret = {};
+function collectIssues(result) {
+  const lookup = {};
+  const ret = [];
   for (const pageResult of result) {
     for (const failed of pageResult.failed || []) {
       const failedUrl = failed.url;
-      if (!ret[failedUrl]) {
-        ret[failedUrl] = {}
+      let issue = lookup[failedUrl];
+      if (!issue) {
+        lookup[failedUrl] = issue = {failedUrl};
+        ret.push(issue)
       }
       if (pageResult.url !== failedUrl) {
-        if (!ret[failedUrl].loadedBy) {
-          ret[failedUrl].loadedBy = []
+        let loadedBy = issue.loadedBy
+        if (!loadedBy) {
+          issue.loadedBy = loadedBy = []
         }
-        ret[failedUrl].loadedBy.push(pageResult.url)
+        loadedBy.push({url: pageResult.url, status: failed.status})
+      } else {
+        issue.status = failed.status
       }
     }
   }
   for (const pageResult of result) {
     for (const href of pageResult.hrefs || []) {
-      if (ret.hasOwnProperty(href)) {
-        if (!ret[href].linkedBy) {
-          ret[href].linkedBy = []
+      if (lookup.hasOwnProperty(href)) {
+        if (!lookup[href].linkedBy) {
+          lookup[href].linkedBy = []
         }
-        ret[href].linkedBy.push(pageResult.url)
+        lookup[href].linkedBy.push(pageResult.url)
       }
     }
   }
+
   return ret;
 }
 
 function uniqueErrors(state) {
-  return Object.keys(collectErrors(state)).length
+  return collectIssues(state).length
 }
 
 function removeFromArray(arr, obj) {
@@ -269,6 +268,30 @@ function removeFromArray(arr, obj) {
 }
 
 async function crawlUrls(state, page, root) {
+  function urlToPrefix(url) {
+    let s = url.protocol + "//";
+    if (url.auth) {
+      s = s + url.auth + "@";
+    }
+    return s + url.host;
+  }
+
+  function updateTodo(state, currentUrl, hrefs, root) {
+    const rootUrl = new URL(root);
+    const rootUrlStart = urlToPrefix(rootUrl);
+
+    for (const href of hrefs) {
+      const url = new URL(href, currentUrl);
+      const urlString = url.toString();
+      const urlStart = urlToPrefix(url);
+      if (!state.checked.hasOwnProperty(urlString) && !state.todo.includes(urlString)) {
+        if (rootUrlStart.valueOf() === urlStart.valueOf()) {
+          state.todo.push(urlString)
+        }
+      }
+    }
+  }
+
   do {
     const url = state.todo.shift();
     info("check", url, "checked", Object.keys(state.checked).length, "todo", state.todo.length, "unique errors", uniqueErrors(state.results));
@@ -280,19 +303,15 @@ async function crawlUrls(state, page, root) {
     if (urlResults.hrefs) {
       updateTodo(state, url, urlResults.hrefs, root)
     }
-    info("errors", pretty(collectErrors(state.results)))
+    info("issues", pretty(collectIssues(state.results)))
   } while (state.todo.length !== 0);
-  info("checked", Object.keys(state.checked).length, "unique errors", uniqueErrors(state.results));
-  info("errors", collectErrors(state.results));
-  info("results", state.results);
-  return state.results;
 }
 
 function pretty(obj) {
   return JSON.stringify(obj, null, 2)
 }
 
-const defaultParameters = {ignore: [], headless: true, devtools: false, debug: false};
+const defaultParameters = {report: undefined, ignore: [], headless: true, devtools: false, debug: false};
 
 async function crawl(url, params = defaultParameters) {
   return crawler(params).crawl(url)
@@ -300,7 +319,7 @@ async function crawl(url, params = defaultParameters) {
 
 function crawler(params = defaultParameters) {
   let browser, page;
-  if(params.debug) {
+  if (params.debug) {
     debug.debugOn = true;
   }
   return {
@@ -319,10 +338,36 @@ function crawler(params = defaultParameters) {
 
       this.todo.push(root);
       try {
-        return await crawlUrls(this, page, root);
+        await crawlUrls(this, page, root);
+        info("checked", Object.keys(this.checked).length, "unique errors", uniqueErrors(this.results));
+        info("issues", pretty(collectIssues(this.results)));
+        info("results", pretty(this.results));
+        return this.results;
       } finally {
         await browser.close();
       }
+    },
+    createReport: function () {
+      const context = {params: this.params};
+      if (this.todo.length > 0) {
+        context.todo = this.todo;
+      }
+      if (this.results.length > 0) {
+        context.results = this.results;
+        const issues = collectIssues(this.results);
+        if (issues.length > 0) {
+          context.issues = issues;
+        }
+      }
+      if (this.checked.size > 0) {
+        context.checked = this.checked;
+      }
+      if (this.processing.length > 0) {
+        context.prosessing = this.prosessing;
+      }
+      const source = __dirname + "/reports/default.html"
+      const template = Handlebars.compile(readFile(source));
+      return template(context);
     }
   };
 }
@@ -350,7 +395,19 @@ async function startCommandLine(argv, crawlerF, defaultParameters) {
     for (const url of urls) {
       await crawler.crawl(url)
     }
+    if (params.report) {
+      writeTextFile(params.report, crawler.createReport());
+      info("wrote report to", params.report)
+    }
   }
+}
+
+function writeTextFile(filepath, output) {
+  fs.writeFileSync(filepath, output)
+}
+
+function readFile(filepath) {
+  return fs.readFileSync(filepath, "utf8")
 }
 
 if (module) {

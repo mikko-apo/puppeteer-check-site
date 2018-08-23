@@ -27,7 +27,10 @@
   "homepage": "https://github.com/mikko-apo/puppeteer-check-site#readme",
   "devDependencies": {
     "express": "4.16.3",
-    "mocha": "5.2.0",
-    "puppeteer": "1.7.0"
+    "mocha": "5.2.0"
+  },
+  "dependencies": {
+    "puppeteer": "1.7.0",
+    "handlebars": "^4.0.11"
   }
 }
