@@ -62,6 +62,19 @@ Handlebars.registerHelper('link', function (url) {
     + '</a>');
 });
 
+function errorToObject(error) {
+  const ret = {};
+  const message = error.message;
+  const stack = error.stack;
+  if (message && message !== "") {
+    ret.message = message;
+  }
+  if (stack && stack !== "") {
+    ret.stack = stack;
+  }
+  return ret;
+}
+
 async function crawlUrl(page, crawlUrl, params) {
   const succeeded = [];
   const failed = [];
@@ -124,29 +137,13 @@ async function crawlUrl(page, crawlUrl, params) {
   }
 
   function errorListener(error) {
-    const ret = {};
-    const message = error.message;
-    const stack = error.stack;
-    if (message && message !== "") {
-      ret.message = message;
-    }
-    if (stack && stack !== "") {
-      ret.stack = stack;
-    }
-    pageErrors.push(ret);
+    const ret = errorToObject(error);
+    errors.push(ret);
     info("- error", error.message)
   }
 
   function pageErrorListener(error) {
-    const ret = {};
-    const message = error.message;
-    const stack = error.stack;
-    if (message && message !== "") {
-      ret.message = message;
-    }
-    if (stack && stack !== "") {
-      ret.stack = stack;
-    }
+    const ret = errorToObject(error);
     pageErrors.push(ret);
     info("- pageerror", error.message)
   }
@@ -223,10 +220,10 @@ async function crawlUrl(page, crawlUrl, params) {
   return await createResult(page);
 }
 
-function collectIssues(result) {
+function collectIssues(results) {
   const lookup = {};
   const ret = [];
-  for (const pageResult of result) {
+  for (const pageResult of results) {
     for (const failed of pageResult.failed || []) {
       const failedUrl = failed.url;
       let issue = lookup[failedUrl];
@@ -235,7 +232,7 @@ function collectIssues(result) {
         ret.push(issue)
       }
       if (pageResult.url !== failedUrl) {
-        let loadedBy = issue.loadedBy
+        let loadedBy = issue.loadedBy;
         if (!loadedBy) {
           issue.loadedBy = loadedBy = []
         }
@@ -244,8 +241,26 @@ function collectIssues(result) {
         issue.status = failed.status
       }
     }
+    for(const error of pageResult.errors || []) {
+      const errorLookup = error.message || error.stack;
+      let issue = lookup[errorLookup];
+      if (!issue) {
+        lookup[errorLookup] = issue = {error: error.message, stack: error.stack, urls: []};
+        ret.push(issue)
+      }
+      issue.urls.push(pageResult.url)
+    }
+    for(const error of pageResult.pageErrors || []) {
+      const errorLookup = error.message || error.stack;
+      let issue = lookup[errorLookup];
+      if (!issue) {
+        lookup[errorLookup] = issue = {error: error.message, stack: error.stack, urls: []};
+        ret.push(issue)
+      }
+      issue.urls.push(pageResult.url)
+    }
   }
-  for (const pageResult of result) {
+  for (const pageResult of results) {
     for (const href of pageResult.hrefs || []) {
       if (lookup.hasOwnProperty(href)) {
         if (!lookup[href].linkedBy) {
@@ -296,12 +311,17 @@ async function crawlUrls(state, page, root) {
     const url = state.todo.shift();
     info("check", url, "checked", Object.keys(state.checked).length, "todo", state.todo.length, "unique errors", uniqueErrors(state.results));
     state.processing.push(url);
-    const urlResults = await crawlUrl(page, url, state.params);
+    let pageResult = undefined;
+    try {
+      pageResult = await crawlUrl(page, url, state.params);
+    } catch (e) {
+      pageResult = {url, errors: [errorToObject(e)]};
+    }
     removeFromArray(state.processing, url);
-    state.results.push(urlResults);
+    state.results.push(pageResult);
     state.checked[url] = true;
-    if (urlResults.hrefs) {
-      updateTodo(state, url, urlResults.hrefs, root)
+    if (pageResult.hrefs) {
+      updateTodo(state, url, pageResult.hrefs, root)
     }
     info("issues", pretty(collectIssues(state.results)))
   } while (state.todo.length !== 0);
@@ -365,7 +385,7 @@ function crawler(params = defaultParameters) {
       if (this.processing.length > 0) {
         context.prosessing = this.prosessing;
       }
-      const source = __dirname + "/reports/default.html"
+      const source = __dirname + "/reports/default.html";
       const template = Handlebars.compile(readFile(source));
       return template(context);
     }
@@ -398,6 +418,11 @@ async function startCommandLine(argv, crawlerF, defaultParameters) {
     if (params.report) {
       writeTextFile(params.report, crawler.createReport());
       info("wrote report to", params.report)
+    }
+    const issues = collectIssues(crawler.results);
+    if(issues.length > 0) {
+      info("Exiting with error...")
+      process.exit(1)
     }
   }
 }

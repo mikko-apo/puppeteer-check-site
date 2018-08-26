@@ -12,7 +12,7 @@ function eq(was, expected) {
 
 function containsInOrder(txt, ...rest) {
   let prevIndex = undefined;
-  const found = []
+  const found = [];
   for (const s of rest) {
     const index = txt.indexOf(s, prevIndex ? prevIndex + 1 : 0);
     if (index > (prevIndex || -1)) {
@@ -130,6 +130,32 @@ describe('Ignore urls', () => {
   })
 });
 
+describe('Catch error for non-existing page', () => {
+  const expectedResult = [
+    {
+      "url": "http://reaktor2234.com",
+      "errors": [
+        {
+          "message": "net::ERR_NAME_NOT_RESOLVED at http://reaktor2234.com"
+        }
+      ]
+    }
+  ];
+
+  it('Catch error', async () => {
+    const crawler = checkSite.crawler();
+    const res = await crawler.crawl("http://reaktor2234.com");
+    delete res[0].errors[0].stack;
+    eq(res, expectedResult);
+    containsInOrder(crawler.createReport(),
+      "Issues: 1", "net::ERR_NAME_NOT_RESOLVED at http://reaktor2234.com", //"Error stack:","https://reaktor2234.com",
+      "Checked 1 pages", "Errors 1:"
+    )
+
+  })
+});
+
+
 describe("Commandline", () => {
   const cmd = require('../check-site');
   let collectectedUrls;
@@ -141,7 +167,8 @@ describe("Commandline", () => {
       return {
         crawl: (url) => {
           collectectedUrls.push(url)
-        }
+        },
+        results: []
       }
     };
 
