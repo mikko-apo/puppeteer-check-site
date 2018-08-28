@@ -1,5 +1,7 @@
 const assert = require('assert').strict;
-const app = require('./testApp');
+const app = require('./testApp').launch();
+const app2 = require('./testApp').launch();
+const app3 = require('./testApp').launch();
 const checkSite = require('../check-site');
 
 function eq(was, expected) {
@@ -53,7 +55,7 @@ describe('Two pages, three links, one link that does not exist', () => {
   }];
 
   it('Should crawl linked pages', async () => {
-    app.setPageData(pages);
+    app.pageData = pages;
     const crawler = checkSite.crawler();
     const res = await crawler.crawl(app.makeUrl("a"));
     assert.deepEqual(res, expectedResult);
@@ -80,7 +82,7 @@ describe('Catch javascript errors', () => {
   }];
 
   it('Catch error', async () => {
-    app.setPageData(pages);
+    app.pageData = pages;
     const res = await checkSite.crawl(app.makeUrl("a"));
     eq(res, expectedResult)
   })
@@ -88,11 +90,11 @@ describe('Catch javascript errors', () => {
 
 describe('Ignore urls', () => {
   it('Ignore internal href', async () => {
-    app.setPageData({
+    app.pageData = {
       a: {
         hrefs: ["twitter"]
       }
-    });
+    };
     const res = await checkSite.crawl(app.makeUrl("a"), {ignore: ["twitter"]});
     eq(res, [{
       "url": app.makeUrl("a"),
@@ -102,11 +104,11 @@ describe('Ignore urls', () => {
   });
 
   it('Ignore external href', async () => {
-    app.setPageData({
+    app.pageData = {
       a: {
         hrefs: ["http://twitter.com/"]
       }
-    });
+    };
     const res = await checkSite.crawl(app.makeUrl("a"), {ignore: ["http://twitter.com"]});
     eq(res, [{
       "url": app.makeUrl("a"),
@@ -116,11 +118,11 @@ describe('Ignore urls', () => {
   });
 
   it('Ignore resource load', async () => {
-    app.setPageData({
+    app.pageData = {
       a: {
         script: ["test.js"]
       }
-    });
+    };
     const res = await checkSite.crawl(app.makeUrl("a"), {ignore: ["test.js"]});
     eq(res, [{
       "url": app.makeUrl("a"),
@@ -155,6 +157,46 @@ describe('Catch error for non-existing page', () => {
   })
 });
 
+describe("External pages", () => {
+  it('third host is not crawled', async () => {
+    app.pageData = {
+      a: {
+        hrefs: [app2.makeUrl("b")]
+      }
+    };
+    app2.pageData = {
+      b: {
+        hrefs: [app3.makeUrl("c")]
+      }
+    };
+    const crawler = checkSite.crawler();
+    const res = await crawler.crawl(app.makeUrl("a"));
+    assert.deepEqual(res, [
+      {
+        "url": app.makeUrl("a"),
+        "hrefs": [
+          app2.makeUrl("b")
+        ],
+        "succeeded": [
+          app.makeUrl("a")
+        ]
+      },
+      {
+        "external": true,
+        "url": app2.makeUrl("b"),
+        "hrefs": [
+          app3.makeUrl("c")
+        ],
+        "succeeded": [
+          app2.makeUrl("b")
+        ]
+      }
+    ]);
+    containsInOrder(crawler.createReport(),
+      "Checked 2 pages"
+    )
+  })
+});
 
 describe("Commandline", () => {
   const cmd = require('../check-site');

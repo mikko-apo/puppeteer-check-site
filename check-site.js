@@ -21,7 +21,7 @@ async function scrollToEnd(page) {
     await page.evaluate('window.scrollBy(0, window.innerHeight)');
     let currentPosition = await page.evaluate('window.pageYOffset');
     if (currentPosition !== originalPosition) {
-      await page.waitFor(100);
+      await page.waitFor(50);
       originalPosition = currentPosition;
     } else {
       scroll = false
@@ -36,11 +36,11 @@ async function waitUntilEmpty(arr) {
         if (arr.length === 0) {
           resolve();
         } else {
-          debug("Waiting for request to finish", arr);
+          info("Waiting for request to finish", arr);
           setTimeout(waitForRequestToFinish, 1000);
         }
       };
-      setTimeout(waitForRequestToFinish, 100);
+      setTimeout(waitForRequestToFinish, 1000);
     }
   );
 }
@@ -75,7 +75,7 @@ function errorToObject(error) {
   return ret;
 }
 
-async function crawlUrl(page, crawlUrl, params) {
+async function crawlUrl(page, crawlUrl, isInternal, params) {
   const succeeded = [];
   const failed = [];
   const openRequestUrls = [];
@@ -100,7 +100,7 @@ async function crawlUrl(page, crawlUrl, params) {
     debug("request started", url);
     if (isIgnored(url)) {
       request.abort();
-      info(" - aborting request because url is ignored", url)
+      info("- aborting request because url is ignored", url)
     } else {
       openRequestUrls.push(url);
       request.continue();
@@ -176,6 +176,9 @@ async function crawlUrl(page, crawlUrl, params) {
   async function createResult(page) {
     const finalUrl = page.url();
     let pageResult = {url: finalUrl};
+    if(!isInternal) {
+      pageResult.external=true
+    }
     if (finalUrl !== crawlUrl) {
       pageResult.originalUrl = crawlUrl;
     }
@@ -191,7 +194,9 @@ async function crawlUrl(page, crawlUrl, params) {
       if (isIgnored(urlString)) {
         info("- ignoring href", urlString)
       } else {
-        hrefs.push(href)
+        if(href.length > 0 && !hrefs.includes(href)) {
+          hrefs.push(href)
+        }
       }
     }
 
@@ -274,12 +279,21 @@ function collectIssues(results) {
   return ret;
 }
 
-function uniqueErrors(state) {
+function uniqueIssues(state) {
   return collectIssues(state).length
 }
 
 function removeFromArray(arr, obj) {
   arr.splice(arr.indexOf(obj), 1);
+}
+
+function okToAddUrl(state, url, urlString) {
+  const protocolAllowed = ["http:", "https:"].includes(url.protocol);
+  const hasNotBeenChecked = !state.checked.hasOwnProperty(urlString);
+  const isAlreadyInTodo = !state.todo.includes(urlString);
+  const isAlreadyInExternalTodo = state.todoExternal.includes(urlString);
+  const isNotEmpty = urlString.length > 0;
+  return protocolAllowed && hasNotBeenChecked && isAlreadyInTodo && !isAlreadyInExternalTodo && isNotEmpty;
 }
 
 async function crawlUrls(state, page, root) {
@@ -291,7 +305,7 @@ async function crawlUrls(state, page, root) {
     return s + url.host;
   }
 
-  function updateTodo(state, currentUrl, hrefs, root) {
+  function updateTodo(state, currentUrl, currentIsInternal, hrefs, root) {
     const rootUrl = new URL(root);
     const rootUrlStart = urlToPrefix(rootUrl);
 
@@ -299,21 +313,27 @@ async function crawlUrls(state, page, root) {
       const url = new URL(href, currentUrl);
       const urlString = url.toString();
       const urlStart = urlToPrefix(url);
-      if (!state.checked.hasOwnProperty(urlString) && !state.todo.includes(urlString)) {
-        if (rootUrlStart.valueOf() === urlStart.valueOf()) {
+      if (okToAddUrl(state, url, urlString)) {
+        const hrefIsInternal = rootUrlStart.valueOf() === urlStart.valueOf();
+        if (hrefIsInternal) {
           state.todo.push(urlString)
+        } else {
+          if(currentIsInternal) {
+            state.todoExternal.push(urlString)
+          }
         }
       }
     }
   }
 
   do {
-    const url = state.todo.shift();
-    info("check", url, "checked", Object.keys(state.checked).length, "todo", state.todo.length, "unique errors", uniqueErrors(state.results));
+    const isInternal = state.todo.length > 0;
+    const url = isInternal > 0 ? state.todo.shift() : state.todoExternal.shift();
+    info("check", url, "checked", Object.keys(state.checked).length, "todo", state.todo.length, "todo external", state.todoExternal.length, "unique issues", pretty(uniqueIssues(state.results)));
     state.processing.push(url);
     let pageResult = undefined;
     try {
-      pageResult = await crawlUrl(page, url, state.params);
+      pageResult = await crawlUrl(page, url, isInternal, state.params);
     } catch (e) {
       pageResult = {url, errors: [errorToObject(e)]};
     }
@@ -321,17 +341,23 @@ async function crawlUrls(state, page, root) {
     state.results.push(pageResult);
     state.checked[url] = true;
     if (pageResult.hrefs) {
-      updateTodo(state, url, pageResult.hrefs, root)
+      updateTodo(state, url, isInternal, pageResult.hrefs, root)
     }
-    info("issues", pretty(collectIssues(state.results)))
-  } while (state.todo.length !== 0);
+    info("issues", pretty(collectIssues(state.results)));
+    if (state.params.report) {
+      writeTextFile(state.params.report, state.createReport());
+    }
+    if (state.params.resultJson) {
+      writeTextFile(state.params.resultJson, JSON.stringify(state.results));
+    }
+  } while (state.todo.length !== 0 || state.todoExternal.length !== 0);
 }
 
 function pretty(obj) {
   return JSON.stringify(obj, null, 2)
 }
 
-const defaultParameters = {report: undefined, ignore: [], headless: true, devtools: false, debug: false};
+const defaultParameters = {report: undefined, resultJson: undefined, ignore: [], headless: true, devtools: false, debug: false};
 
 async function crawl(url, params = defaultParameters) {
   return crawler(params).crawl(url)
@@ -344,6 +370,7 @@ function crawler(params = defaultParameters) {
   }
   return {
     todo: [],
+    todoExternal: [],
     results: [],
     checked: {},
     processing: [],
@@ -359,7 +386,7 @@ function crawler(params = defaultParameters) {
       this.todo.push(root);
       try {
         await crawlUrls(this, page, root);
-        info("checked", Object.keys(this.checked).length, "unique errors", uniqueErrors(this.results));
+        info("checked", Object.keys(this.checked).length, "unique errors", uniqueIssues(this.results));
         info("issues", pretty(collectIssues(this.results)));
         info("results", pretty(this.results));
         return this.results;
@@ -416,12 +443,14 @@ async function startCommandLine(argv, crawlerF, defaultParameters) {
       await crawler.crawl(url)
     }
     if (params.report) {
-      writeTextFile(params.report, crawler.createReport());
       info("wrote report to", params.report)
+    }
+    if (params.resultJson) {
+      info("wrote results as json to", params.resultJson)
     }
     const issues = collectIssues(crawler.results);
     if(issues.length > 0) {
-      info("Exiting with error...")
+      info("Exiting with error...");
       process.exit(1)
     }
   }

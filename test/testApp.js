@@ -5,10 +5,10 @@ function createHtmlPage(pageData) {
   html.push("<html>");
   if (pageData.headInlineScript || pageData.script) {
     html.push("<head>");
-    if(pageData.script) {
+    if (pageData.script) {
       html = html.concat(pageData.script.map(src => '<script src="' + src + '"></script>'));
     }
-    if(pageData.headInlineScript) {
+    if (pageData.headInlineScript) {
       html = html.concat(pageData.headInlineScript.map(txt => '<script>' + txt + "</script>"));
     }
     html.push("</head>");
@@ -22,20 +22,26 @@ function createHtmlPage(pageData) {
   return html.join("\n")
 }
 
-const app = express();
-app.use((req, res, next) => {
-  let path = req.url.substring(1);
-  if (app.pageData.hasOwnProperty(path)) {
-    const html = createHtmlPage(app.pageData[path]);
-    res.send(html);
-    return;
-  }
-  next();
-});
-const server = app.listen();
-app.makeUrl = path => "http://localhost:" + server.address().port + "/" + path;
-app.setPageData = pageData => app.pageData = pageData;
+function launch() {
+  const app = express();
+  const data = {
+    pageData: {}
+  };
+  app.use((req, res, next) => {
+    let path = req.url.substring(1);
+    if (data.pageData.hasOwnProperty(path)) {
+      const html = createHtmlPage(data.pageData[path]);
+      res.send(html);
+      return;
+    }
+    next();
+  });
+  const server = app.listen();
+  data.makeUrl = path => "http://localhost:" + server.address().port + "/" + path;
+  return data;
+}
+
 
 if (module) {
-  module.exports = app;
+  module.exports = {launch};
 }
