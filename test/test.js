@@ -95,14 +95,18 @@ describe('Timeout', () => {
         sleepMs: 20000
       }
     };
-    const res = await checkSite.crawl(app.makeUrl("a"), {timeout: 750});
+    const crawler = checkSite.crawler({timeout: 750});
+    const res = await crawler.crawl(app.makeUrl("a"));
     eq(res, [{
       "url": app.makeUrl("a"),
       "failed": [{
         status: "timeout",
         url: app.makeUrl("a")
       }]
-    }])
+    }]);
+    containsInOrder(crawler.createReport(),
+      "Issues: 1", app.makeUrl("a"), "status: timeout",
+      "Checked 1 pages", app.makeUrl("a"), "Failed resources 1:", app.makeUrl("a"))
   });
 
   it('Resource', async () => {
@@ -114,7 +118,8 @@ describe('Timeout', () => {
         sleepMs: 20000
       }
     };
-    const res = await checkSite.crawl(app.makeUrl("a"), {timeout: 750});
+    const crawler = checkSite.crawler({timeout: 750});
+    const res = await crawler.crawl(app.makeUrl("a"));
     eq(res, [
       {
         "url": app.makeUrl("a"),
@@ -126,7 +131,10 @@ describe('Timeout', () => {
           app.makeUrl("a")
         ]
       }
-    ])
+    ]);
+    containsInOrder(crawler.createReport(),
+      "Issues: 1", app.makeUrl("b"), app.makeUrl("a"), "status: timeout",
+      "Checked 1 pages", app.makeUrl("a"), "Failed resources 1:", app.makeUrl("b"), "Loaded resources 1:", app.makeUrl("a"))
   })
 });
 
