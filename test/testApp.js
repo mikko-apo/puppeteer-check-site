@@ -4,15 +4,17 @@ function wrap(a) {
   return Array.isArray(a) ? a : [a]
 }
 
-function createResponse(pageData) {
-  let html = [];
+function createResponse(req, res, pageData) {
+  if(pageData.txtFn) {
+    return pageData.txtFn(req, res, pageData);
+  }
   if(pageData.js) {
     return wrap(pageData.js).join("\n");
   }
   if(pageData.text) {
     return wrap(pageData.text).join("\n");
   }
-  html.push("<html>");
+  let html = ["<html>"];
   if (pageData.headInlineScript || pageData.script) {
     html.push("<head>");
     if (pageData.script) {
@@ -42,7 +44,7 @@ function launch() {
     if (data.pageData.hasOwnProperty(path)) {
       const pageData = data.pageData[path];
       const sleepMs = pageData.sleepMs ? pageData.sleepMs : 1;
-      const txt = createResponse(pageData);
+      const txt = createResponse(req, res, pageData);
       setTimeout(() => res.send(txt), sleepMs);
       return;
     }

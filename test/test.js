@@ -103,7 +103,7 @@ describe('Timeout', () => {
         url: app.makeUrl("a")
       }]
     }])
-  })
+  });
 
   it('Resource', async () => {
     app.pageData = {
@@ -237,6 +237,42 @@ describe("External pages", () => {
     containsInOrder(crawler.createReport(),
       "Checked 2 pages"
     )
+  })
+});
+
+describe('Referer', () => {
+  it('Referer is passed to second page', async () => {
+    const ref = [];
+    app.pageData = {
+      a: {
+        hrefs: "b"
+      },
+      b: {
+        txtFn: (req) => {
+          ref.push(req.get("Referer"));
+          return "pow"
+        }
+      }
+    };
+    const res = await checkSite.crawl(app.makeUrl("a"));
+    eq(ref, [app.makeUrl("a")]);
+    eq(res, [
+      {
+        "url": app.makeUrl("a"),
+        "hrefs": [
+          app.makeUrl("b")
+        ],
+        "succeeded": [
+          app.makeUrl("a")
+        ]
+      },
+      {
+        "url": app.makeUrl("b"),
+        "succeeded": [
+          app.makeUrl("b")
+        ]
+      }
+    ])
   })
 });
 

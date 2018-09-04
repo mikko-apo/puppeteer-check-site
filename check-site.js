@@ -38,7 +38,7 @@ async function waitUntilEmpty(arr, timeoutMs, handleTimeout) {
           resolve();
         } else {
           const msDiff = new Date().getTime() - startMs;
-          debug("Waiting for requests to finish", msDiff, timeoutMs, arr)
+          debug("Waiting for requests to finish", msDiff, timeoutMs, arr);
           if (msDiff > timeoutMs) {
             handleTimeout(arr, msDiff, resolve, reject)
           } else {
@@ -81,7 +81,8 @@ function errorToObject(error) {
   return ret;
 }
 
-async function crawlUrl(page, crawlUrl, isInternal, params) {
+async function crawlUrl(page, crawlUrl, isInternal, state) {
+  const {params, referers} = state;
   const succeeded = [];
   const failed = [];
   const openRequests = [];
@@ -154,10 +155,10 @@ async function crawlUrl(page, crawlUrl, isInternal, params) {
     info("- pageerror", error.message)
   }
 
-  function handleRequestTimeout(arr, msDiff, resolve, rejectj) {
+  function handleRequestTimeout(arr, msDiff, resolve) {
     info("- timeout at", msDiff, "ms for resource requests", arr.length);
     for (const request of arr) {
-      info("- timeout", request.url())
+      info("- timeout", request.url());
       failed.push({status: "timeout", url: request.url()})
     }
     arr.length = 0;
@@ -175,6 +176,11 @@ async function crawlUrl(page, crawlUrl, isInternal, params) {
 //    page.on('request', request => { console.log("REQ: " + request.url()); });
 
     try {
+      const headers = {}
+      if (referers[crawlUrl]) {
+        headers.referer = referers[crawlUrl]
+      }
+      await page.setExtraHTTPHeaders(headers)
       await page.goto(crawlUrl, {waitUntil: 'domcontentloaded', timeout: params.timeout});
       await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
       await scrollToEnd(page);
@@ -324,7 +330,7 @@ async function crawlUrls(state, page, root) {
     return s + url.host;
   }
 
-  function updateTodo(state, currentUrl, currentIsInternal, hrefs, root) {
+  function updateState(state, currentUrl, currentIsInternal, hrefs, root) {
     const rootUrl = new URL(root);
     const rootUrlStart = urlToPrefix(rootUrl);
 
@@ -341,6 +347,7 @@ async function crawlUrls(state, page, root) {
             state.todoExternal.push(urlString)
           }
         }
+        state.referers[urlString] = currentUrl
       }
     }
   }
@@ -352,7 +359,7 @@ async function crawlUrls(state, page, root) {
     state.processing.push(url);
     let pageResult = undefined;
     try {
-      pageResult = await crawlUrl(page, url, isInternal, state.params);
+      pageResult = await crawlUrl(page, url, isInternal, state);
     } catch (e) {
       if (e.name === "TimeoutError") {
         pageResult = {url, failed: [{status: "timeout", url}]};
@@ -364,7 +371,7 @@ async function crawlUrls(state, page, root) {
     state.results.push(pageResult);
     state.checked[url] = true;
     if (pageResult.hrefs) {
-      updateTodo(state, url, isInternal, pageResult.hrefs, root)
+      updateState(state, url, isInternal, pageResult.hrefs, root)
     }
     info("issues", pretty(collectIssues(state.results)));
     if (state.params.report) {
@@ -395,7 +402,7 @@ async function crawl(url, params) {
 }
 
 function crawler(params = defaultParameters) {
-  params = {...defaultParameters, ...params}
+  params = {...defaultParameters, ...params};
   let browser, page;
   if (params.debug) {
     debug.debugOn = true;
@@ -403,6 +410,7 @@ function crawler(params = defaultParameters) {
   return {
     todo: [],
     todoExternal: [],
+    referers: {},
     results: [],
     checked: {},
     processing: [],
