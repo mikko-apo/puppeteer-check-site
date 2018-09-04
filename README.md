@@ -3,7 +3,7 @@
 Site checker that uses a real browser (Chrome with Puppeteer) to check your site for errors.
 
 Features:
-* Checks for broken and dead links, page resource load errors and javascript errors.
+* Checks for broken and dead links, timeouts, page resource load errors and javascript errors.
 * Supports lazy loading of elements by scrolling through the whole page.
 * Makes sure that external links work. 
 * Generates HTML report

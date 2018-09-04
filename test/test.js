@@ -72,7 +72,7 @@ describe('Two pages, three links, one link that does not exist', () => {
 describe('Catch javascript errors', () => {
   const pages = {
     a: {
-      headInlineScript: ["pow();"]
+      headInlineScript: "pow();"
     }
   };
   const expectedResult = [{
@@ -88,11 +88,53 @@ describe('Catch javascript errors', () => {
   })
 });
 
+describe('Timeout', () => {
+  it('Main url', async () => {
+    app.pageData = {
+      a: {
+        sleepMs: 20000
+      }
+    };
+    const res = await checkSite.crawl(app.makeUrl("a"), {timeout: 750});
+    eq(res, [{
+      "url": app.makeUrl("a"),
+      "failed": [{
+        status: "timeout",
+        url: app.makeUrl("a")
+      }]
+    }])
+  })
+
+  it('Resource', async () => {
+    app.pageData = {
+      a: {
+        headInlineScript: [['window.onload=function(){fetch("', app.makeUrl("b"), '")}']]
+      },
+      b: {
+        sleepMs: 20000
+      }
+    };
+    const res = await checkSite.crawl(app.makeUrl("a"), {timeout: 750});
+    eq(res, [
+      {
+        "url": app.makeUrl("a"),
+        "failed": [{
+          status: "timeout",
+          url: app.makeUrl("b")
+        }],
+        "succeeded": [
+          app.makeUrl("a")
+        ]
+      }
+    ])
+  })
+});
+
 describe('Ignore urls', () => {
   it('Ignore internal href', async () => {
     app.pageData = {
       a: {
-        hrefs: ["twitter"]
+        hrefs: "twitter"
       }
     };
     const res = await checkSite.crawl(app.makeUrl("a"), {ignore: ["twitter"]});
@@ -106,7 +148,7 @@ describe('Ignore urls', () => {
   it('Ignore external href', async () => {
     app.pageData = {
       a: {
-        hrefs: ["http://twitter.com/"]
+        hrefs: "http://twitter.com/"
       }
     };
     const res = await checkSite.crawl(app.makeUrl("a"), {ignore: ["http://twitter.com"]});
@@ -120,7 +162,7 @@ describe('Ignore urls', () => {
   it('Ignore resource load', async () => {
     app.pageData = {
       a: {
-        script: ["test.js"]
+        script: "test.js"
       }
     };
     const res = await checkSite.crawl(app.makeUrl("a"), {ignore: ["test.js"]});
@@ -161,12 +203,12 @@ describe("External pages", () => {
   it('third host is not crawled', async () => {
     app.pageData = {
       a: {
-        hrefs: [app2.makeUrl("b")]
+        hrefs: app2.makeUrl("b")
       }
     };
     app2.pageData = {
       b: {
-        hrefs: [app3.makeUrl("c")]
+        hrefs: app3.makeUrl("c")
       }
     };
     const crawler = checkSite.crawler();

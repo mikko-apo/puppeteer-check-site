@@ -30,17 +30,23 @@ async function scrollToEnd(page) {
   return 1;
 }
 
-async function waitUntilEmpty(arr) {
-  return new Promise((resolve) => {
+async function waitUntilEmpty(arr, timeoutMs, handleTimeout) {
+  const startMs = new Date().getTime();
+  return new Promise((resolve, reject) => {
       const waitForRequestToFinish = () => {
         if (arr.length === 0) {
           resolve();
         } else {
-          info("Waiting for request to finish", arr);
-          setTimeout(waitForRequestToFinish, 1000);
+          const msDiff = new Date().getTime() - startMs;
+          debug("Waiting for requests to finish", msDiff, timeoutMs, arr)
+          if (msDiff > timeoutMs) {
+            handleTimeout(arr, msDiff, resolve, reject)
+          } else {
+            setTimeout(waitForRequestToFinish, 1000);
+          }
         }
       };
-      setTimeout(waitForRequestToFinish, 1000);
+      setTimeout(waitForRequestToFinish, 500);
     }
   );
 }
@@ -78,7 +84,7 @@ function errorToObject(error) {
 async function crawlUrl(page, crawlUrl, isInternal, params) {
   const succeeded = [];
   const failed = [];
-  const openRequestUrls = [];
+  const openRequests = [];
   const pageErrors = [];
   const errors = [];
   const ignored = [];
@@ -102,7 +108,7 @@ async function crawlUrl(page, crawlUrl, isInternal, params) {
       request.abort();
       info("- aborting request because url is ignored", url)
     } else {
-      openRequestUrls.push(url);
+      openRequests.push(request);
       request.continue();
     }
   }
@@ -110,7 +116,7 @@ async function crawlUrl(page, crawlUrl, isInternal, params) {
   function requestFailedListener(request) {
     const url = request.url();
     debug("request failed", url);
-    removeFromArray(openRequestUrls, url);
+    removeFromArray(openRequests, request);
     if (!isIgnored(url)) {
       info("- failed", url, "errorText", request.failure().errorText);
       failed.push({
@@ -122,8 +128,8 @@ async function crawlUrl(page, crawlUrl, isInternal, params) {
 
   function requestFinishedListener(request) {
     const url = request.url();
-    removeFromArray(openRequestUrls, url);
-    debug("request finished", url, "unfinished", openRequestUrls)
+    removeFromArray(openRequests, request);
+    debug("request finished", url, "unfinished", openRequests)
   }
 
   function responseListener(response) {
@@ -148,6 +154,16 @@ async function crawlUrl(page, crawlUrl, isInternal, params) {
     info("- pageerror", error.message)
   }
 
+  function handleRequestTimeout(arr, msDiff, resolve, rejectj) {
+    info("- timeout at", msDiff, "ms for resource requests", arr.length);
+    for (const request of arr) {
+      info("- timeout", request.url())
+      failed.push({status: "timeout", url: request.url()})
+    }
+    arr.length = 0;
+    resolve();
+  }
+
   async function processPage(page) {
     page.setRequestInterception(true);
     page.on('request', requestListener);
@@ -159,10 +175,11 @@ async function crawlUrl(page, crawlUrl, isInternal, params) {
 //    page.on('request', request => { console.log("REQ: " + request.url()); });
 
     try {
-      await page.goto(crawlUrl, {waitUntil: 'networkidle0'});
-      await waitUntilEmpty(openRequestUrls);
+      await page.goto(crawlUrl, {waitUntil: 'domcontentloaded', timeout: params.timeout});
+      await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
       await scrollToEnd(page);
-      await waitUntilEmpty(openRequestUrls);
+      await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
+      return true;
     } finally {
       page.removeListener('request', requestListener);
       page.removeListener('requestfailed', requestFailedListener);
@@ -176,8 +193,8 @@ async function crawlUrl(page, crawlUrl, isInternal, params) {
   async function createResult(page) {
     const finalUrl = page.url();
     let pageResult = {url: finalUrl};
-    if(!isInternal) {
-      pageResult.external=true
+    if (!isInternal) {
+      pageResult.external = true
     }
     if (finalUrl !== crawlUrl) {
       pageResult.originalUrl = crawlUrl;
@@ -194,7 +211,7 @@ async function crawlUrl(page, crawlUrl, isInternal, params) {
       if (isIgnored(urlString)) {
         info("- ignoring href", urlString)
       } else {
-        if(href.length > 0 && !hrefs.includes(href)) {
+        if (href.length > 0 && !hrefs.includes(href)) {
           hrefs.push(href)
         }
       }
@@ -228,41 +245,43 @@ async function crawlUrl(page, crawlUrl, isInternal, params) {
 function collectIssues(results) {
   const lookup = {};
   const ret = [];
+
+  function addIssue(key, base) {
+    let issue = lookup[key];
+    if (!issue) {
+      lookup[key] = issue = base;
+      ret.push(issue)
+    }
+    return issue;
+  }
+
   for (const pageResult of results) {
     for (const failed of pageResult.failed || []) {
       const failedUrl = failed.url;
-      let issue = lookup[failedUrl];
-      if (!issue) {
-        lookup[failedUrl] = issue = {failedUrl};
-        ret.push(issue)
-      }
-      if (pageResult.url !== failedUrl) {
+      const issue = addIssue(failed.url, {failedUrl});
+      if (pageResult.url === failedUrl) {
+        issue.status = failed.status
+      } else {
         let loadedBy = issue.loadedBy;
         if (!loadedBy) {
           issue.loadedBy = loadedBy = []
         }
         loadedBy.push({url: pageResult.url, status: failed.status})
-      } else {
-        issue.status = failed.status
       }
     }
-    for(const error of pageResult.errors || []) {
-      const errorLookup = error.message || error.stack;
-      let issue = lookup[errorLookup];
-      if (!issue) {
-        lookup[errorLookup] = issue = {error: error.message, stack: error.stack, urls: []};
-        ret.push(issue)
-      }
-      issue.urls.push(pageResult.url)
+    for (const error of pageResult.errors || []) {
+      addIssue(error.message || error.stack, {
+        error: error.message,
+        stack: error.stack,
+        urls: []
+      }).urls.push(pageResult.url)
     }
-    for(const error of pageResult.pageErrors || []) {
-      const errorLookup = error.message || error.stack;
-      let issue = lookup[errorLookup];
-      if (!issue) {
-        lookup[errorLookup] = issue = {error: error.message, stack: error.stack, urls: []};
-        ret.push(issue)
-      }
-      issue.urls.push(pageResult.url)
+    for (const error of pageResult.pageErrors || []) {
+      addIssue(error.message || error.stack, {
+        error: error.message,
+        stack: error.stack,
+        urls: []
+      }).urls.push(pageResult.url)
     }
   }
   for (const pageResult of results) {
@@ -318,7 +337,7 @@ async function crawlUrls(state, page, root) {
         if (hrefIsInternal) {
           state.todo.push(urlString)
         } else {
-          if(currentIsInternal) {
+          if (currentIsInternal) {
             state.todoExternal.push(urlString)
           }
         }
@@ -335,7 +354,11 @@ async function crawlUrls(state, page, root) {
     try {
       pageResult = await crawlUrl(page, url, isInternal, state.params);
     } catch (e) {
-      pageResult = {url, errors: [errorToObject(e)]};
+      if (e.name === "TimeoutError") {
+        pageResult = {url, failed: [{status: "timeout", url}]};
+      } else {
+        pageResult = {url, errors: [errorToObject(e)]};
+      }
     }
     removeFromArray(state.processing, url);
     state.results.push(pageResult);
@@ -357,13 +380,22 @@ function pretty(obj) {
   return JSON.stringify(obj, null, 2)
 }
 
-const defaultParameters = {report: undefined, resultJson: undefined, ignore: [], headless: true, devtools: false, debug: false};
+const defaultParameters = {
+  report: undefined,
+  resultJson: undefined,
+  ignore: [],
+  headless: true,
+  devtools: false,
+  debug: false,
+  timeout: 10000
+};
 
-async function crawl(url, params = defaultParameters) {
+async function crawl(url, params) {
   return crawler(params).crawl(url)
 }
 
 function crawler(params = defaultParameters) {
+  params = {...defaultParameters, ...params}
   let browser, page;
   if (params.debug) {
     debug.debugOn = true;
@@ -431,6 +463,8 @@ async function startCommandLine(argv, crawlerF, defaultParameters) {
         value = value.split(",").map(s => /^\/.*\/$/.test(s) ? new RegExp(s.substr(1, s.length - 2)) : s)
       } else if (typeof(defaultValue) === "boolean") {
         value = JSON.parse(value)
+      } else if (typeof(defaultValue) === "number") {
+        value = parseInt(value)
       }
       params[key] = value
     } else {
@@ -449,7 +483,7 @@ async function startCommandLine(argv, crawlerF, defaultParameters) {
       info("wrote results as json to", params.resultJson)
     }
     const issues = collectIssues(crawler.results);
-    if(issues.length > 0) {
+    if (issues.length > 0) {
       info("Exiting with error...");
       process.exit(1)
     }

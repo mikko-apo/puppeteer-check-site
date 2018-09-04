@@ -1,21 +1,31 @@
 const express = require('express');
 
-function createHtmlPage(pageData) {
+function wrap(a) {
+  return Array.isArray(a) ? a : [a]
+}
+
+function createResponse(pageData) {
   let html = [];
+  if(pageData.js) {
+    return wrap(pageData.js).join("\n");
+  }
+  if(pageData.text) {
+    return wrap(pageData.text).join("\n");
+  }
   html.push("<html>");
   if (pageData.headInlineScript || pageData.script) {
     html.push("<head>");
     if (pageData.script) {
-      html = html.concat(pageData.script.map(src => '<script src="' + src + '"></script>'));
+      html = html.concat(wrap(pageData.script).map(src => '<script src="' + src + '"></script>'));
     }
     if (pageData.headInlineScript) {
-      html = html.concat(pageData.headInlineScript.map(txt => '<script>' + txt + "</script>"));
+      html = html.concat(wrap(pageData.headInlineScript).map(txt => ('<script>' + wrap(txt).join(" ") + '</script>')));
     }
     html.push("</head>");
   }
   if (pageData.hrefs) {
     html.push("<body>");
-    html = html.concat(pageData.hrefs.map(href => '<a href="' + href + '">' + href + "</a>"));
+    html = html.concat(wrap(pageData.hrefs).map(href => '<a href="' + href + '">' + href + "</a>"));
     html.push("</body>");
   }
   html.push("</html>");
@@ -30,8 +40,10 @@ function launch() {
   app.use((req, res, next) => {
     let path = req.url.substring(1);
     if (data.pageData.hasOwnProperty(path)) {
-      const html = createHtmlPage(data.pageData[path]);
-      res.send(html);
+      const pageData = data.pageData[path];
+      const sleepMs = pageData.sleepMs ? pageData.sleepMs : 1;
+      const txt = createResponse(pageData);
+      setTimeout(() => res.send(txt), sleepMs);
       return;
     }
     next();
