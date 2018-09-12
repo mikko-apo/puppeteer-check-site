@@ -59,7 +59,7 @@ describe('Two pages, three links, one link that does not exist', () => {
     const crawler = checkSite.crawler();
     const res = await crawler.crawl(app.makeUrl("a"));
     assert.deepEqual(res, expectedResult);
-    containsInOrder(crawler.createReport(),
+    containsInOrder(crawler.createReportHtml(),
       "Issues: 1", app.makeUrl("c"), "status: 404", "Linked by", app.makeUrl("a"),
       "Checked 3 pages",
       app.makeUrl("a"), "Links 2", app.makeUrl("b"), app.makeUrl("c"), "Loaded resources 1", app.makeUrl("a"),
@@ -104,7 +104,7 @@ describe('Timeout', () => {
         url: app.makeUrl("a")
       }]
     }]);
-    containsInOrder(crawler.createReport(),
+    containsInOrder(crawler.createReportHtml(),
       "Issues: 1", app.makeUrl("a"), "status: timeout",
       "Checked 1 pages", app.makeUrl("a"), "Failed resources 1:", app.makeUrl("a"))
   });
@@ -132,7 +132,7 @@ describe('Timeout', () => {
         ]
       }
     ]);
-    containsInOrder(crawler.createReport(),
+    containsInOrder(crawler.createReportHtml(),
       "Issues: 1", app.makeUrl("b"), app.makeUrl("a"), "status: timeout",
       "Checked 1 pages", app.makeUrl("a"), "Failed resources 1:", app.makeUrl("b"), "Loaded resources 1:", app.makeUrl("a"))
   })
@@ -199,7 +199,7 @@ describe('Catch error for non-existing page', () => {
     const res = await crawler.crawl("http://reaktor2234.com");
     delete res[0].errors[0].stack;
     eq(res, expectedResult);
-    containsInOrder(crawler.createReport(),
+    containsInOrder(crawler.createReportHtml(),
       "Issues: 1", "net::ERR_NAME_NOT_RESOLVED at http://reaktor2234.com", //"Error stack:","https://reaktor2234.com",
       "Checked 1 pages", "Errors 1:"
     )
@@ -242,9 +242,9 @@ describe("External pages", () => {
         ]
       }
     ]);
-    containsInOrder(crawler.createReport(),
+    containsInOrder(crawler.createReportHtml(),
       "Checked 2 pages"
-    )
+    );
   })
 });
 

@@ -156,9 +156,8 @@ async function crawlUrl(page, crawlUrl, isInternal, state) {
   }
 
   function handleRequestTimeout(arr, msDiff, resolve) {
-    info("- timeout at", msDiff, "ms for resource requests", arr.length);
+    info("- timeout at", msDiff, "ms. Unfinished resource requests", arr.length);
     for (const request of arr) {
-      info("- timeout", request.url());
       failed.push({status: "timeout", url: request.url()})
     }
     arr.length = 0;
@@ -185,7 +184,6 @@ async function crawlUrl(page, crawlUrl, isInternal, state) {
       await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
       await scrollToEnd(page);
       await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
-      return true;
     } finally {
       page.removeListener('request', requestListener);
       page.removeListener('requestfailed', requestFailedListener);
@@ -304,10 +302,6 @@ function collectIssues(results) {
   return ret;
 }
 
-function uniqueIssues(state) {
-  return collectIssues(state).length
-}
-
 function removeFromArray(arr, obj) {
   arr.splice(arr.indexOf(obj), 1);
 }
@@ -355,7 +349,7 @@ async function crawlUrls(state, page, root) {
   do {
     const isInternal = state.todo.length > 0;
     const url = isInternal > 0 ? state.todo.shift() : state.todoExternal.shift();
-    info("check", url, "checked", Object.keys(state.checked).length, "todo", state.todo.length, "todo external", state.todoExternal.length, "unique issues", pretty(uniqueIssues(state.results)));
+    info("check", url, "checked", Object.keys(state.checked).length, "todo", state.todo.length, "todo external", state.todoExternal.length, "unique issues", collectIssues(state.results).length);
     state.processing.push(url);
     let pageResult = undefined;
     try {
@@ -373,9 +367,12 @@ async function crawlUrls(state, page, root) {
     if (pageResult.hrefs) {
       updateState(state, url, isInternal, pageResult.hrefs, root)
     }
-    info("issues", pretty(collectIssues(state.results)));
+    const issues = collectIssues([pageResult]);
+    if (issues.length > 0) {
+      info(state.createReportTextShort([pageResult]));
+    }
     if (state.params.report) {
-      writeTextFile(state.params.report, state.createReport());
+      writeTextFile(state.params.report, state.createReportHtml());
     }
     if (state.params.resultJson) {
       writeTextFile(state.params.resultJson, JSON.stringify(state.results));
@@ -426,15 +423,16 @@ function crawler(params = defaultParameters) {
       this.todo.push(root);
       try {
         await crawlUrls(this, page, root);
-        info("checked", Object.keys(this.checked).length, "unique errors", uniqueIssues(this.results));
-        info("issues", pretty(collectIssues(this.results)));
+        const issues = collectIssues(this.results);
+        info("checked", Object.keys(this.checked).length, "unique errors", issues.length);
+        info(this.createReportText(this.results));
         info("results", pretty(this.results));
         return this.results;
       } finally {
         await browser.close();
       }
     },
-    createReport: function () {
+    createReportHtml: function () {
       const context = {params: this.params};
       if (this.todo.length > 0) {
         context.todo = this.todo;
@@ -455,6 +453,54 @@ function crawler(params = defaultParameters) {
       const source = __dirname + "/reports/default.html";
       const template = Handlebars.compile(readFile(source));
       return template(context);
+    },
+    createReportText: function (results) {
+      const ret = [];
+      const issues = collectIssues(results);
+      for (const issue of issues) {
+        const firstLine = []
+        if (issue.error) {
+          firstLine.push("Error:", issue.error)
+        }
+        if (issue.failedUrl) {
+          firstLine.push("Url:", issue.failedUrl)
+        }
+        if (issue.status) {
+          firstLine.push("Status:", issue.status)
+        }
+        ret.push(firstLine.join(" "))
+        if (issue.stack) {
+          ret.push("- Stack: " + issue.stack)
+        }
+        if (issue.urls) {
+          ret.push(...issue.urls.map(u => " - Url: " + u))
+        }
+        if (issue.loadedBy) {
+          ret.push(...issue.loadedBy.map(l => " - Loaded by: " + l.url + " fail status: " + l.status))
+        }
+        if (issue.linkedBy) {
+          ret.push(...issue.linkedBy.map(u => " - Linked by: " + u))
+        }
+      }
+      return ret.join("\n");
+    },
+    createReportTextShort: function (results) {
+      const ret = [];
+      const issues = collectIssues(results);
+      for (const issue of issues) {
+        const firstLine = ["-"]
+        if (issue.status) {
+          firstLine.push(issue.status)
+        }
+        if (issue.error) {
+          firstLine.push("error:", issue.error)
+        }
+        if (issue.failedUrl) {
+          firstLine.push(issue.failedUrl)
+        }
+        ret.push(firstLine.join(" "))
+      }
+      return ret.join("\n");
     }
   };
 }

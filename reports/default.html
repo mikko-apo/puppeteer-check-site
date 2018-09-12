@@ -33,6 +33,14 @@
             Error stack:
             <pre>{{stack}}</pre>
             {{/if}}
+            {{#if urls}}
+            <b>Pages</b>
+            <ul>
+                {{#each urls}}
+                <li>{{link .}}</li>
+                {{/each}}
+            </ul>
+            {{/if}}
             {{#if loadedBy}}
             <ul>
                 {{#each loadedBy}}
@@ -44,14 +52,6 @@
             <b>Linked by</b>
             <ul>
                 {{#each linkedBy}}
-                <li>{{link .}}</li>
-                {{/each}}
-            </ul>
-            {{/if}}
-            {{#if urls}}
-            <b>Pages</b>
-            <ul>
-                {{#each urls}}
                 <li>{{link .}}</li>
                 {{/each}}
             </ul>
