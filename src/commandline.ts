@@ -1,8 +1,7 @@
 import {collectIssues, Crawler, createCrawler, defaultParameters, Parameters} from "./check-site";
 import {info} from "./util";
 
-export async function startCommandLine(argv: string[], createCrawlerF: (params: Parameters) => Crawler = createCrawler) {
-  const urls = [];
+export function parseParams(argv: string[], urls: string[]) {
   const params: Parameters = {};
   for (const arg of argv) {
     if (arg.includes(":") && defaultParameters.hasOwnProperty(arg.split(":")[0])) {
@@ -21,6 +20,12 @@ export async function startCommandLine(argv: string[], createCrawlerF: (params: 
       urls.push(arg)
     }
   }
+  return params;
+}
+
+export async function startCommandLine(argv: string[], createCrawlerF: (params: Parameters) => Crawler = createCrawler) {
+  const urls: string[] = [];
+  const params = parseParams(argv, urls);
   if (urls.length > 0) {
     const crawler = createCrawlerF(params);
     for (const url of urls) {

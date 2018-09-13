@@ -1,8 +1,8 @@
 import {launch} from "./testApp";
 import {deepStrictEqual} from "assert";
-import {crawl, Crawler, createCrawler, PageResult, Parameters, State} from "../src/check-site";
+import {crawl, createCrawler} from "../src/check-site";
 import {createReportHtml} from "../src/reporting";
-import {startCommandLine} from "../src/commandline";
+import {parseParams} from "../src/commandline";
 
 const app = launch();
 const app2 = launch();
@@ -288,39 +288,24 @@ describe('Referer', () => {
   })
 });
 
-describe("Commandline", () => {
-  let collectectedUrls: string[];
-  let expectedParams: Parameters;
-  const createCrawlerF: (params: Parameters) => Crawler = (params: Parameters) => {
-    eq(params, expectedParams);
-    return {
-      crawl: (root: string): Promise<PageResult[]> => {
-        collectectedUrls.push(root)
-        return null
-      },
-      state: new State(params)
-    }
-  }
-
-  beforeEach(() => {
-    collectectedUrls = [];
-    expectedParams = {}
-  });
-
+describe("Commandline parsing", () => {
   it('single host', async () => {
-    await startCommandLine(["localhost"], createCrawlerF);
-    eq(collectectedUrls, ["localhost"])
+    const urls: string[] = [];
+    parseParams(["localhost"], urls);
+    eq(urls, ["localhost"])
   });
 
   it('single host debug', async () => {
-    expectedParams = {"debug": true};
-    await startCommandLine(["localhost", "debug:true"], createCrawlerF);
-    eq(collectectedUrls, ["localhost"])
+    const urls: string[] = [];
+    const params = parseParams(["localhost", "debug:true"], urls);
+    eq(params, {"debug": true})
+    eq(urls, ["localhost"])
   });
 
   it('two hosts ignore', async () => {
-    expectedParams = {"ignore": ["test", /pow:pow/]};
-    await startCommandLine(["localhost", "foo", "ignore:test,/pow:pow/"], createCrawlerF);
-    eq(collectectedUrls, ["localhost", "foo"])
+    const urls: string[] = [];
+    const params =  parseParams(["localhost", "foo", "ignore:test,/pow:pow/"], urls);
+    eq(params, {"ignore": ["test", /pow:pow/]})
+    eq(urls, ["localhost", "foo"])
   })
 });

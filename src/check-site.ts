@@ -51,12 +51,41 @@ export class State {
   checked: { [index: string]: boolean } = {};
   processing: string[] = [];
   params: Parameters;
-  constructor(params: Parameters) { this.params = params; }
+
+  constructor(params: Parameters) {
+    this.params = params;
+  }
 }
 
-export interface Crawler {
-  crawl: (root: string) => Promise<PageResult[]>
-  state: State
+export class Crawler {
+  browser: Browser;
+  page: Page;
+  state: State;
+
+  constructor(state: State) {
+    this.state = state;
+  }
+
+  async crawl(root: string): Promise<PageResult[]> {
+    if (!this.browser) {
+      this.browser = await launch(this.state.params as LaunchOptions);
+    }
+    if (!this.page) {
+      this.page = await this.browser.newPage();
+    }
+
+    this.state.todo.push(root);
+    try {
+      await crawlUrls(this.state, this.page, root);
+      const issues = collectIssues(this.state.results);
+      info("checked", Object.keys(this.state.checked).length, "unique errors", issues.length);
+      info(createReportText(this.state.results));
+      info("results", pretty(this.state.results));
+      return this.state.results;
+    } finally {
+      await this.browser.close();
+    }
+  }
 }
 
 async function scrollToEnd(page: Page) {
@@ -135,7 +164,8 @@ async function crawlUrl(page: Page, crawlUrl: string, isInternal: boolean, state
   if (!isInternal) {
     pageResult.external = true
   }
-  await processPage(page, pageResult, openRequests);
+  const listeners = createListeners(pageResult, openRequests);
+  await processPage(page, listeners, openRequests);
   pageResult.url = page.url();
   pageResult.hrefs.push(...await getHrefs(page, pageResult.url));
   cleanResult(pageResult);
@@ -209,18 +239,17 @@ async function crawlUrl(page: Page, crawlUrl: string, isInternal: boolean, state
     return listeners;
   }
 
-  async function processPage(page: Page, pageResult: PageResult, openRequests: Request[]): Promise<void> {
+  async function processPage(page: Page, listeners: Map<keyof PageEventObj, any>, openRequests: Request[]): Promise<void> {
+    const headers: Headers = {};
+    if (referers[crawlUrl]) {
+      headers.referer = referers[crawlUrl]
+    }
+    await page.setExtraHTTPHeaders(headers);
     await page.setRequestInterception(true);
-    const listeners = createListeners(pageResult, openRequests);
 
     listeners.forEach((value, key) => page.on(key, value));
 
     try {
-      const headers: Headers = {};
-      if (referers[crawlUrl]) {
-        headers.referer = referers[crawlUrl]
-      }
-      await page.setExtraHTTPHeaders(headers);
       await page.goto(crawlUrl, {waitUntil: 'domcontentloaded', timeout: params.timeout});
       await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
       await scrollToEnd(page);
@@ -249,31 +278,31 @@ async function crawlUrl(page: Page, crawlUrl: string, isInternal: boolean, state
     }
     return hrefs;
   }
+}
 
-  function cleanResult(pageResult: PageResult) {
-    if (pageResult.url === pageResult.originalUrl) {
-      delete pageResult.originalUrl;
-    }
-    if (pageResult.errors.length === 0) {
-      delete pageResult.errors;
-    }
-    if (pageResult.pageErrors.length === 0) {
-      delete pageResult.pageErrors;
-    }
-    if (pageResult.failed.length === 0) {
-      delete pageResult.failed;
-    }
-    if (pageResult.ignored.length === 0) {
-      delete pageResult.ignored;
-    }
-    if (pageResult.hrefs.length === 0) {
-      delete pageResult.hrefs;
-    }
-    if (pageResult.succeeded.length === 0) {
-      delete pageResult.succeeded;
-    }
-    return pageResult;
+function cleanResult(pageResult: PageResult) {
+  if (pageResult.url === pageResult.originalUrl) {
+    delete pageResult.originalUrl;
   }
+  if (pageResult.errors.length === 0) {
+    delete pageResult.errors;
+  }
+  if (pageResult.pageErrors.length === 0) {
+    delete pageResult.pageErrors;
+  }
+  if (pageResult.failed.length === 0) {
+    delete pageResult.failed;
+  }
+  if (pageResult.ignored.length === 0) {
+    delete pageResult.ignored;
+  }
+  if (pageResult.hrefs.length === 0) {
+    delete pageResult.hrefs;
+  }
+  if (pageResult.succeeded.length === 0) {
+    delete pageResult.succeeded;
+  }
+  return pageResult;
 }
 
 export function collectIssues(results: PageResult[]) {
@@ -415,33 +444,9 @@ export async function crawl(url: string, params = defaultParameters): Promise<Pa
 }
 
 export function createCrawler(params = defaultParameters): Crawler {
-  params = {...defaultParameters, ...params};
-  let browser: Browser, page: Page;
   if (params.debug) {
     (debug as any).debugOn = true;
   }
-  const state = new State(params);
-  return {
-    state: state,
-    crawl: async function (root: string): Promise<PageResult[]> {
-      if (!browser) {
-        browser = await launch(state.params as LaunchOptions);
-      }
-      if (!page) {
-        page = await browser.newPage();
-      }
-
-      state.todo.push(root);
-      try {
-        await crawlUrls(state, page, root);
-        const issues = collectIssues(state.results);
-        info("checked", Object.keys(state.checked).length, "unique errors", issues.length);
-        info(createReportText(state.results));
-        info("results", pretty(state.results));
-        return state.results;
-      } finally {
-        await browser.close();
-      }
-    }
-  };
+  const state = new State({...defaultParameters, ...params});
+  return new Crawler(state);
 }
