@@ -1,5 +1,5 @@
 import {URL} from "url";
-import {Browser, Headers, launch, Page, PageEventObj, Request, Response} from "puppeteer";
+import {Browser, Headers, launch, LaunchOptions, Page, PageEventObj, Request, Response} from "puppeteer";
 import {debug, info, pretty, pushUnique, removeFromArray, writeTextFile} from "./util";
 import {createReportHtml, createReportText, createReportTextShort} from "./reporting";
 
@@ -43,14 +43,15 @@ export interface Parameters {
   resultJson?: string
 }
 
-export interface State {
-  todo: string[]
-  todoExternal: string[]
-  referers: { [index: string]: string }
-  results: PageResult[]
-  checked: { [index: string]: boolean }
-  processing: string[]
-  params: any
+export class State {
+  todo: string[] = [];
+  todoExternal: string[] = [];
+  referers: { [index: string]: string } = {};
+  results: PageResult[] = [];
+  checked: { [index: string]: boolean } = {};
+  processing: string[] = [];
+  params: Parameters;
+  constructor(params: Parameters) { this.params = params; }
 }
 
 export interface Crawler {
@@ -334,37 +335,37 @@ function okToAddUrl(state: State, url: URL, urlString: string) {
   return protocolAllowed && hasNotBeenChecked && isAlreadyInTodo && !isAlreadyInExternalTodo && isNotEmpty;
 }
 
-async function crawlUrls(state: State, page: Page, root: string) {
-  function urlToPrefix(url: URL) {
-    let s = url.protocol + "//";
-    if ((url as any).auth) {
-      s = s + (url as any).auth + "@";
-    }
-    return s + url.host;
+function urlToPrefix(url: URL) {
+  let s = url.protocol + "//";
+  if ((url as any).auth) {
+    s = s + (url as any).auth + "@";
   }
+  return s + url.host;
+}
 
-  function updateState(state: State, currentUrl: string, currentIsInternal: boolean, hrefs: string[], root: string) {
-    const rootUrl = new URL(root);
-    const rootUrlStart = urlToPrefix(rootUrl);
+function addHrefsToState(hrefs: string[], state: State, currentUrl: string, currentIsInternal: boolean, root: string) {
+  const rootUrl = new URL(root);
+  const rootUrlStart = urlToPrefix(rootUrl);
 
-    for (const href of hrefs) {
-      const url = new URL(href, currentUrl);
-      const urlString = url.toString();
-      const urlStart = urlToPrefix(url);
-      if (okToAddUrl(state, url, urlString)) {
-        const hrefIsInternal = rootUrlStart.valueOf() === urlStart.valueOf();
-        if (hrefIsInternal) {
-          state.todo.push(urlString)
-        } else {
-          if (currentIsInternal) {
-            state.todoExternal.push(urlString)
-          }
+  for (const href of hrefs) {
+    const url = new URL(href, currentUrl);
+    const urlString = url.toString();
+    const urlStart = urlToPrefix(url);
+    if (okToAddUrl(state, url, urlString)) {
+      const hrefIsInternal = rootUrlStart.valueOf() === urlStart.valueOf();
+      if (hrefIsInternal) {
+        state.todo.push(urlString)
+      } else {
+        if (currentIsInternal) {
+          state.todoExternal.push(urlString)
         }
-        state.referers[urlString] = currentUrl
       }
+      state.referers[urlString] = currentUrl
     }
   }
+}
 
+async function crawlUrls(state: State, page: Page, root: string) {
   do {
     const isInternal = state.todo.length > 0;
     const url = isInternal ? state.todo.shift() : state.todoExternal.shift();
@@ -384,7 +385,7 @@ async function crawlUrls(state: State, page: Page, root: string) {
     state.results.push(pageResult);
     state.checked[url] = true;
     if (pageResult.hrefs) {
-      updateState(state, url, isInternal, pageResult.hrefs, root)
+      addHrefsToState(pageResult.hrefs, state, pageResult.url, isInternal, root)
     }
     const issues = collectIssues([pageResult]);
     if (issues.length > 0) {
@@ -413,30 +414,18 @@ export async function crawl(url: string, params = defaultParameters): Promise<Pa
   return createCrawler(params).crawl(url)
 }
 
-export function createState(params: Parameters): State {
-  return {
-    todo: [],
-    todoExternal: [],
-    referers: {},
-    results: [],
-    checked: {},
-    processing: [],
-    params: params,
-  };
-}
-
 export function createCrawler(params = defaultParameters): Crawler {
   params = {...defaultParameters, ...params};
   let browser: Browser, page: Page;
   if (params.debug) {
     (debug as any).debugOn = true;
   }
-  const state = createState(params);
+  const state = new State(params);
   return {
     state: state,
     crawl: async function (root: string): Promise<PageResult[]> {
       if (!browser) {
-        browser = await launch(state.params);
+        browser = await launch(state.params as LaunchOptions);
       }
       if (!page) {
         page = await browser.newPage();

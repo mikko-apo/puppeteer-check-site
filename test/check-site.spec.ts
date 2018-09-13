@@ -1,6 +1,6 @@
 import {launch} from "./testApp";
 import {deepStrictEqual} from "assert";
-import {crawl, Crawler, createCrawler, createState, PageResult, Parameters} from "../src/check-site";
+import {crawl, Crawler, createCrawler, PageResult, Parameters, State} from "../src/check-site";
 import {createReportHtml} from "../src/reporting";
 import {startCommandLine} from "../src/commandline";
 
@@ -298,7 +298,7 @@ describe("Commandline", () => {
         collectectedUrls.push(root)
         return null
       },
-      state: createState(params)
+      state: new State(params)
     }
   }
 
