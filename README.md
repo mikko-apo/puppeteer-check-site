@@ -1,4 +1,4 @@
-# check-site.js
+# check-site.ts
 
 Site checker that uses a real browser (Chrome with Puppeteer) to check your site for errors.
 

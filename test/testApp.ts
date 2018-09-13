@@ -1,17 +1,36 @@
-const express = require('express');
+import * as express from "express";
 
-function wrap(a) {
+export interface PageData {
+  txtFn?: (req: express.Request, res: express.Response, pageData: PageData) => string
+  js?: string | string[]
+  text?: string | string[]
+  script?: string | string[]
+  headInlineScript?: string | string[] | string[][]
+  hrefs?: string | string[]
+  sleepMs?: number
+}
+
+export interface SiteData {
+  [index: string]: PageData
+}
+
+export interface TestServer {
+  siteData: SiteData
+  makeUrl: (path: string) => string
+}
+
+function wrap(a: any) {
   return Array.isArray(a) ? a : [a]
 }
 
-function createResponse(req, res, pageData) {
-  if(pageData.txtFn) {
+function createResponse(req: express.Request, res: express.Response, pageData: PageData) {
+  if (pageData.txtFn) {
     return pageData.txtFn(req, res, pageData);
   }
-  if(pageData.js) {
+  if (pageData.js) {
     return wrap(pageData.js).join("\n");
   }
-  if(pageData.text) {
+  if (pageData.text) {
     return wrap(pageData.text).join("\n");
   }
   let html = ["<html>"];
@@ -34,15 +53,17 @@ function createResponse(req, res, pageData) {
   return html.join("\n")
 }
 
-function launch() {
+export function launch(): TestServer {
   const app = express();
-  const data = {
-    pageData: {}
+  const server = app.listen(0);
+  const testServer: TestServer = {
+    siteData: {},
+    makeUrl: (path) => `http://localhost:${(server.address() as any).port}/${path}`
   };
   app.use((req, res, next) => {
     let path = req.url.substring(1);
-    if (data.pageData.hasOwnProperty(path)) {
-      const pageData = data.pageData[path];
+    if (testServer.siteData.hasOwnProperty(path)) {
+      const pageData = testServer.siteData[path];
       const sleepMs = pageData.sleepMs ? pageData.sleepMs : 1;
       const txt = createResponse(req, res, pageData);
       setTimeout(() => res.send(txt), sleepMs);
@@ -50,11 +71,8 @@ function launch() {
     }
     next();
   });
-  const server = app.listen();
-  data.makeUrl = path => "http://localhost:" + server.address().port + "/" + path;
-  return data;
+  return testServer
 }
-
 
 if (module) {
   module.exports = {launch};

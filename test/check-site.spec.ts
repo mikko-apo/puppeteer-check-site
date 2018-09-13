@@ -1,18 +1,22 @@
-const assert = require('assert').strict;
-const app = require('./testApp').launch();
-const app2 = require('./testApp').launch();
-const app3 = require('./testApp').launch();
-const checkSite = require('../check-site');
+import {launch} from "./testApp";
+import {deepStrictEqual} from "assert";
+import {crawl, Crawler, createCrawler, createState, PageResult, Parameters} from "../src/check-site";
+import {createReportHtml} from "../src/reporting";
+import {startCommandLine} from "../src/commandline";
 
-function eq(was, expected) {
-  was = JSON.stringify(was, null, 2);
-  expected = JSON.stringify(expected, null, 2);
-  if (was !== expected) {
-    throw new Error(was + " is not equal to expected " + expected);
+const app = launch();
+const app2 = launch();
+const app3 = launch();
+
+function eq<T>(was: T, expected: T) {
+  const wasJson = JSON.stringify(was, null, 2);
+  const expectedJson = JSON.stringify(expected, null, 2);
+  if (wasJson !== expectedJson) {
+    throw new Error(wasJson + " is not equal to expected " + expectedJson);
   }
 }
 
-function containsInOrder(txt, ...rest) {
+function containsInOrder(txt: string, ...rest: string[]) {
   let prevIndex = undefined;
   const found = [];
   for (const s of rest) {
@@ -55,11 +59,11 @@ describe('Two pages, three links, one link that does not exist', () => {
   }];
 
   it('Should crawl linked pages', async () => {
-    app.pageData = pages;
-    const crawler = checkSite.crawler();
+    app.siteData = pages;
+    const crawler = createCrawler();
     const res = await crawler.crawl(app.makeUrl("a"));
-    assert.deepEqual(res, expectedResult);
-    containsInOrder(crawler.createReportHtml(),
+    deepStrictEqual(res, expectedResult);
+    containsInOrder(createReportHtml(crawler.state),
       "Issues: 1", app.makeUrl("c"), "status: 404", "Linked by", app.makeUrl("a"),
       "Checked 3 pages",
       app.makeUrl("a"), "Links 2", app.makeUrl("b"), app.makeUrl("c"), "Loaded resources 1", app.makeUrl("a"),
@@ -82,20 +86,20 @@ describe('Catch javascript errors', () => {
   }];
 
   it('Catch error', async () => {
-    app.pageData = pages;
-    const res = await checkSite.crawl(app.makeUrl("a"));
+    app.siteData = pages;
+    const res = await crawl(app.makeUrl("a"));
     eq(res, expectedResult)
   })
 });
 
 describe('Timeout', () => {
   it('Main url', async () => {
-    app.pageData = {
+    app.siteData = {
       a: {
         sleepMs: 20000
       }
     };
-    const crawler = checkSite.crawler({timeout: 750});
+    const crawler = createCrawler({timeout: 750});
     const res = await crawler.crawl(app.makeUrl("a"));
     eq(res, [{
       "url": app.makeUrl("a"),
@@ -104,13 +108,13 @@ describe('Timeout', () => {
         url: app.makeUrl("a")
       }]
     }]);
-    containsInOrder(crawler.createReportHtml(),
+    containsInOrder(createReportHtml(crawler.state),
       "Issues: 1", app.makeUrl("a"), "status: timeout",
       "Checked 1 pages", app.makeUrl("a"), "Failed resources 1:", app.makeUrl("a"))
   });
 
   it('Resource', async () => {
-    app.pageData = {
+    app.siteData = {
       a: {
         headInlineScript: [['window.onload=function(){fetch("', app.makeUrl("b"), '")}']]
       },
@@ -118,7 +122,7 @@ describe('Timeout', () => {
         sleepMs: 20000
       }
     };
-    const crawler = checkSite.crawler({timeout: 750});
+    const crawler = createCrawler({timeout: 750});
     const res = await crawler.crawl(app.makeUrl("a"));
     eq(res, [
       {
@@ -132,7 +136,7 @@ describe('Timeout', () => {
         ]
       }
     ]);
-    containsInOrder(crawler.createReportHtml(),
+    containsInOrder(createReportHtml(crawler.state),
       "Issues: 1", app.makeUrl("b"), app.makeUrl("a"), "status: timeout",
       "Checked 1 pages", app.makeUrl("a"), "Failed resources 1:", app.makeUrl("b"), "Loaded resources 1:", app.makeUrl("a"))
   })
@@ -140,12 +144,12 @@ describe('Timeout', () => {
 
 describe('Ignore urls', () => {
   it('Ignore internal href', async () => {
-    app.pageData = {
+    app.siteData = {
       a: {
         hrefs: "twitter"
       }
     };
-    const res = await checkSite.crawl(app.makeUrl("a"), {ignore: ["twitter"]});
+    const res = await crawl(app.makeUrl("a"), {ignore: ["twitter"]});
     eq(res, [{
       "url": app.makeUrl("a"),
       "ignored": [app.makeUrl("twitter")],
@@ -154,12 +158,12 @@ describe('Ignore urls', () => {
   });
 
   it('Ignore external href', async () => {
-    app.pageData = {
+    app.siteData = {
       a: {
         hrefs: "http://twitter.com/"
       }
     };
-    const res = await checkSite.crawl(app.makeUrl("a"), {ignore: ["http://twitter.com"]});
+    const res = await crawl(app.makeUrl("a"), {ignore: ["http://twitter.com"]});
     eq(res, [{
       "url": app.makeUrl("a"),
       "ignored": ["http://twitter.com/"],
@@ -168,12 +172,12 @@ describe('Ignore urls', () => {
   });
 
   it('Ignore resource load', async () => {
-    app.pageData = {
+    app.siteData = {
       a: {
         script: "test.js"
       }
     };
-    const res = await checkSite.crawl(app.makeUrl("a"), {ignore: ["test.js"]});
+    const res = await crawl(app.makeUrl("a"), {ignore: ["test.js"]});
     eq(res, [{
       "url": app.makeUrl("a"),
       "ignored": [app.makeUrl("test.js")],
@@ -195,11 +199,11 @@ describe('Catch error for non-existing page', () => {
   ];
 
   it('Catch error', async () => {
-    const crawler = checkSite.crawler();
+    const crawler = createCrawler();
     const res = await crawler.crawl("http://reaktor2234.com");
     delete res[0].errors[0].stack;
     eq(res, expectedResult);
-    containsInOrder(crawler.createReportHtml(),
+    containsInOrder(createReportHtml(crawler.state),
       "Issues: 1", "net::ERR_NAME_NOT_RESOLVED at http://reaktor2234.com", //"Error stack:","https://reaktor2234.com",
       "Checked 1 pages", "Errors 1:"
     )
@@ -209,19 +213,19 @@ describe('Catch error for non-existing page', () => {
 
 describe("External pages", () => {
   it('third host is not crawled', async () => {
-    app.pageData = {
+    app.siteData = {
       a: {
         hrefs: app2.makeUrl("b")
       }
     };
-    app2.pageData = {
+    app2.siteData = {
       b: {
         hrefs: app3.makeUrl("c")
       }
     };
-    const crawler = checkSite.crawler();
+    const crawler = createCrawler();
     const res = await crawler.crawl(app.makeUrl("a"));
-    assert.deepEqual(res, [
+    deepStrictEqual(res, [
       {
         "url": app.makeUrl("a"),
         "hrefs": [
@@ -242,7 +246,7 @@ describe("External pages", () => {
         ]
       }
     ]);
-    containsInOrder(crawler.createReportHtml(),
+    containsInOrder(createReportHtml(crawler.state),
       "Checked 2 pages"
     );
   })
@@ -250,8 +254,8 @@ describe("External pages", () => {
 
 describe('Referer', () => {
   it('Referer is passed to second page', async () => {
-    const ref = [];
-    app.pageData = {
+    const ref: string[] = [];
+    app.siteData = {
       a: {
         hrefs: "b"
       },
@@ -262,7 +266,7 @@ describe('Referer', () => {
         }
       }
     };
-    const res = await checkSite.crawl(app.makeUrl("a"));
+    const res = await crawl(app.makeUrl("a"));
     eq(ref, [app.makeUrl("a")]);
     eq(res, [
       {
@@ -285,39 +289,38 @@ describe('Referer', () => {
 });
 
 describe("Commandline", () => {
-  const cmd = require('../check-site');
-  let collectectedUrls;
-  let expectedParams;
+  let collectectedUrls: string[];
+  let expectedParams: Parameters;
+  const createCrawlerF: (params: Parameters) => Crawler = (params: Parameters) => {
+    eq(params, expectedParams);
+    return {
+      crawl: (root: string): Promise<PageResult[]> => {
+        collectectedUrls.push(root)
+        return null
+      },
+      state: createState(params)
+    }
+  }
 
   beforeEach(() => {
-    cmd.crawler = (params) => {
-      eq(params, expectedParams);
-      return {
-        crawl: (url) => {
-          collectectedUrls.push(url)
-        },
-        results: []
-      }
-    };
-
     collectectedUrls = [];
     expectedParams = {}
   });
 
   it('single host', async () => {
-    cmd.startCommandLine(["localhost"]);
-    await eq(collectectedUrls, ["localhost"])
+    await startCommandLine(["localhost"], createCrawlerF);
+    eq(collectectedUrls, ["localhost"])
   });
 
   it('single host debug', async () => {
     expectedParams = {"debug": true};
-    await cmd.startCommandLine(["localhost", "debug:true"]);
+    await startCommandLine(["localhost", "debug:true"], createCrawlerF);
     eq(collectectedUrls, ["localhost"])
   });
 
   it('two hosts ignore', async () => {
     expectedParams = {"ignore": ["test", /pow:pow/]};
-    await cmd.startCommandLine(["localhost", "foo", "ignore:test,/pow:pow/"]);
+    await startCommandLine(["localhost", "foo", "ignore:test,/pow:pow/"], createCrawlerF);
     eq(collectectedUrls, ["localhost", "foo"])
   })
 });

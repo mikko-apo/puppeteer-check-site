@@ -2,12 +2,13 @@
   "name": "check-site",
   "version": "1.0.0",
   "description": "Check your site for errors. Crawls through all the pages with Puppeteer and checks for javascript and link errors.",
-  "main": "check-site.js",
+  "main": "src/check-site.ts",
   "bin": {
-    "check-site": "./check-site-bin.js"
+    "check-site": "check-site-bin.ts"
   },
   "scripts": {
-    "test": "mocha"
+    "test": "mocha --require ts-node/register ./test/*.spec.ts",
+    "build-dist": "tsc -p ."
   },
   "repository": {
     "type": "git",
@@ -26,11 +27,18 @@
   },
   "homepage": "https://github.com/mikko-apo/puppeteer-check-site#readme",
   "devDependencies": {
+    "@types/express": "^4.16.0",
+    "@types/handlebars": "^4.0.39",
+    "@types/mocha": "^5.2.5",
+    "@types/node": "^10.9.4",
+    "@types/puppeteer": "^1.6.3",
     "express": "4.16.3",
-    "mocha": "5.2.0"
+    "mocha": "5.2.0",
+    "ts-node": "^7.0.1",
+    "typescript": "^3.0.3"
   },
   "dependencies": {
-    "puppeteer": "1.7.0",
-    "handlebars": "^4.0.11"
+    "handlebars": "^4.0.12",
+    "puppeteer": "^1.8.0"
   }
 }

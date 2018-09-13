@@ -1,20 +1,64 @@
-const puppeteer = require('puppeteer');
-const Handlebars = require('handlebars');
-const fs = require('fs');
+import { URL } from "url";
+import {launch, Browser, Headers, Page, Request, Response} from "puppeteer";
+import {debug, info, pretty, removeFromArray, writeTextFile} from "./util";
+import {createReportHtml, createReportText, createReportTextShort} from "./reporting";
 
-function debug(...args) {
-  if (debug.debugOn) {
-    info(...args)
-  }
+export interface PageResult {
+  url: string
+  external?: boolean
+  originalUrl?: string
+  errors?: ErrorInfo[]
+  pageErrors?: ErrorInfo[]
+  failed?: FailUrlStatus[]
+  ignored?: string[]
+  hrefs?: string[]
+  succeeded?: string[]
 }
 
-debug.debugOn = false;
-
-function info(...args) {
-  console.log(...args);
+interface FailUrlStatus {
+  url: string
+  status?: number | string
+  errorText?: string
 }
 
-async function scrollToEnd(page) {
+interface ErrorInfo {
+  message?: string
+  stack?: string
+}
+
+export interface Issue {
+  failedUrl?: string
+  status?: number | string
+  error?: string
+  stack?: string
+  urls?: string[]
+  loadedBy?: FailUrlStatus[]
+  linkedBy?: string[]
+}
+
+export interface Parameters {
+  [index: string]: any
+
+  report?: string
+  resultJson?: string
+}
+
+export interface State {
+  todo: string[]
+  todoExternal: string[]
+  referers: { [index: string]: string }
+  results: PageResult[]
+  checked: { [index: string]: boolean }
+  processing: string[]
+  params: any
+}
+
+export interface Crawler {
+  crawl: (root: string) => Promise<PageResult[]>
+  state: State
+}
+
+async function scrollToEnd(page: Page) {
   let scroll = true;
   let originalPosition = await page.evaluate('window.pageYOffset');
   while (scroll) {
@@ -30,7 +74,7 @@ async function scrollToEnd(page) {
   return 1;
 }
 
-async function waitUntilEmpty(arr, timeoutMs, handleTimeout) {
+async function waitUntilEmpty(arr: Request[], timeoutMs: number, handleTimeout: (arr: Request[], msDiff: number, resolve: () => void, reject?: (err: any) => void) => void) {
   const startMs = new Date().getTime();
   return new Promise((resolve, reject) => {
       const waitForRequestToFinish = () => {
@@ -51,25 +95,18 @@ async function waitUntilEmpty(arr, timeoutMs, handleTimeout) {
   );
 }
 
-function matches(pattern, string) {
+function matches(pattern: ((s: string) => boolean | RegExp | string), string: string) {
   if (typeof(pattern) === "function") {
     return pattern(string)
   }
-  if (pattern instanceof RegExp) {
-    return pattern.test(string)
+  if ((pattern as RegExp) instanceof RegExp) {
+    return (pattern as RegExp).test(string)
   }
   return string.includes(pattern);
 }
 
-Handlebars.registerHelper('link', function (url) {
-  return new Handlebars.SafeString(
-    '<a href="' + url + '">'
-    + url
-    + '</a>');
-});
-
-function errorToObject(error) {
-  const ret = {};
+function errorToObject(error: ErrorInfo): ErrorInfo {
+  const ret: ErrorInfo = {};
   const message = error.message;
   const stack = error.stack;
   if (message && message !== "") {
@@ -81,16 +118,16 @@ function errorToObject(error) {
   return ret;
 }
 
-async function crawlUrl(page, crawlUrl, isInternal, state) {
+async function crawlUrl(page: Page, crawlUrl: string, isInternal: boolean, state: State): Promise<PageResult> {
   const {params, referers} = state;
-  const succeeded = [];
-  const failed = [];
-  const openRequests = [];
-  const pageErrors = [];
-  const errors = [];
-  const ignored = [];
+  const succeeded: string[] = [];
+  const failed: FailUrlStatus[] = [];
+  const openRequests: Request[] = [];
+  const pageErrors: ErrorInfo[] = [];
+  const errors: ErrorInfo[] = [];
+  const ignored: string[] = [];
 
-  function isIgnored(url) {
+  function isIgnored(url: string) {
     for (const ignore of params.ignore || []) {
       if (matches(ignore, url)) {
         if (!ignored.includes(url)) {
@@ -102,7 +139,7 @@ async function crawlUrl(page, crawlUrl, isInternal, state) {
     return false;
   }
 
-  function requestListener(request) {
+  function requestListener(request: Request) {
     const url = request.url();
     debug("request started", url);
     if (isIgnored(url)) {
@@ -114,7 +151,7 @@ async function crawlUrl(page, crawlUrl, isInternal, state) {
     }
   }
 
-  function requestFailedListener(request) {
+  function requestFailedListener(request: Request) {
     const url = request.url();
     debug("request failed", url);
     removeFromArray(openRequests, request);
@@ -127,13 +164,13 @@ async function crawlUrl(page, crawlUrl, isInternal, state) {
     }
   }
 
-  function requestFinishedListener(request) {
+  function requestFinishedListener(request: Request) {
     const url = request.url();
     removeFromArray(openRequests, request);
     debug("request finished", url, "unfinished", openRequests)
   }
 
-  function responseListener(response) {
+  function responseListener(response: Response) {
     debug("response", response.url());
     if ([200, 204, 206, 301, 302, 304].includes(response.status())) {
       succeeded.push(response.url());
@@ -143,19 +180,19 @@ async function crawlUrl(page, crawlUrl, isInternal, state) {
     }
   }
 
-  function errorListener(error) {
+  function errorListener(error: ErrorInfo) {
     const ret = errorToObject(error);
     errors.push(ret);
     info("- error", error.message)
   }
 
-  function pageErrorListener(error) {
+  function pageErrorListener(error: ErrorInfo) {
     const ret = errorToObject(error);
     pageErrors.push(ret);
     info("- pageerror", error.message)
   }
 
-  function handleRequestTimeout(arr, msDiff, resolve) {
+  function handleRequestTimeout(arr: Request[], msDiff: number, resolve: () => void) {
     info("- timeout at", msDiff, "ms. Unfinished resource requests", arr.length);
     for (const request of arr) {
       failed.push({status: "timeout", url: request.url()})
@@ -164,22 +201,22 @@ async function crawlUrl(page, crawlUrl, isInternal, state) {
     resolve();
   }
 
-  async function processPage(page) {
-    page.setRequestInterception(true);
+  async function processPage(page: Page): Promise<void> {
+    await page.setRequestInterception(true);
     page.on('request', requestListener);
     page.on('requestfailed', requestFailedListener);
     page.on('response', responseListener);
     page.on('requestfinished', requestFinishedListener);
-    page.on('pageerror', pageErrorListener);
+    page.on('pageerror', pageErrorListener as any);
     page.on('error', errorListener);
 //    page.on('request', request => { console.log("REQ: " + request.url()); });
 
     try {
-      const headers = {}
+      const headers: Headers = {};
       if (referers[crawlUrl]) {
         headers.referer = referers[crawlUrl]
       }
-      await page.setExtraHTTPHeaders(headers)
+      await page.setExtraHTTPHeaders(headers);
       await page.goto(crawlUrl, {waitUntil: 'domcontentloaded', timeout: params.timeout});
       await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
       await scrollToEnd(page);
@@ -194,9 +231,9 @@ async function crawlUrl(page, crawlUrl, isInternal, state) {
     }
   }
 
-  async function createResult(page) {
+  async function createResult(page: Page): Promise<PageResult> {
     const finalUrl = page.url();
-    let pageResult = {url: finalUrl};
+    const pageResult: PageResult = {url: finalUrl};
     if (!isInternal) {
       pageResult.external = true
     }
@@ -204,10 +241,10 @@ async function crawlUrl(page, crawlUrl, isInternal, state) {
       pageResult.originalUrl = crawlUrl;
     }
 
-    const hrefs = [];
+    const hrefs: string[] = [];
     const pageHrefs = await page.evaluate(() => {
       const anchors = document.querySelectorAll('a');
-      return [].map.call(anchors, a => a.href);
+      return [].map.call(anchors, (a: any) => a.href);
     });
     for (const href of pageHrefs) {
       const url = new URL(href, finalUrl);
@@ -246,11 +283,11 @@ async function crawlUrl(page, crawlUrl, isInternal, state) {
   return await createResult(page);
 }
 
-function collectIssues(results) {
-  const lookup = {};
-  const ret = [];
+export function collectIssues(results: PageResult[]) {
+  const lookup: { [index: string]: Issue } = {};
+  const ret: Issue[] = [];
 
-  function addIssue(key, base) {
+  function addIssue(key: string, base: Issue): Issue {
     let issue = lookup[key];
     if (!issue) {
       lookup[key] = issue = base;
@@ -302,11 +339,7 @@ function collectIssues(results) {
   return ret;
 }
 
-function removeFromArray(arr, obj) {
-  arr.splice(arr.indexOf(obj), 1);
-}
-
-function okToAddUrl(state, url, urlString) {
+function okToAddUrl(state: State, url: URL, urlString: string) {
   const protocolAllowed = ["http:", "https:"].includes(url.protocol);
   const hasNotBeenChecked = !state.checked.hasOwnProperty(urlString);
   const isAlreadyInTodo = !state.todo.includes(urlString);
@@ -315,16 +348,16 @@ function okToAddUrl(state, url, urlString) {
   return protocolAllowed && hasNotBeenChecked && isAlreadyInTodo && !isAlreadyInExternalTodo && isNotEmpty;
 }
 
-async function crawlUrls(state, page, root) {
-  function urlToPrefix(url) {
+async function crawlUrls(state: State, page: Page, root: string) {
+  function urlToPrefix(url: URL) {
     let s = url.protocol + "//";
-    if (url.auth) {
-      s = s + url.auth + "@";
+    if ((url as any).auth) {
+      s = s + (url as any).auth + "@";
     }
     return s + url.host;
   }
 
-  function updateState(state, currentUrl, currentIsInternal, hrefs, root) {
+  function updateState(state: State, currentUrl: string, currentIsInternal: boolean, hrefs: string[], root: string) {
     const rootUrl = new URL(root);
     const rootUrlStart = urlToPrefix(rootUrl);
 
@@ -348,10 +381,10 @@ async function crawlUrls(state, page, root) {
 
   do {
     const isInternal = state.todo.length > 0;
-    const url = isInternal > 0 ? state.todo.shift() : state.todoExternal.shift();
+    const url = isInternal ? state.todo.shift() : state.todoExternal.shift();
     info("check", url, "checked", Object.keys(state.checked).length, "todo", state.todo.length, "todo external", state.todoExternal.length, "unique issues", collectIssues(state.results).length);
     state.processing.push(url);
-    let pageResult = undefined;
+    let pageResult: PageResult = undefined;
     try {
       pageResult = await crawlUrl(page, url, isInternal, state);
     } catch (e) {
@@ -369,10 +402,10 @@ async function crawlUrls(state, page, root) {
     }
     const issues = collectIssues([pageResult]);
     if (issues.length > 0) {
-      info(state.createReportTextShort([pageResult]));
+      info(createReportTextShort([pageResult]));
     }
     if (state.params.report) {
-      writeTextFile(state.params.report, state.createReportHtml());
+      writeTextFile(state.params.report, createReportHtml(state));
     }
     if (state.params.resultJson) {
       writeTextFile(state.params.resultJson, JSON.stringify(state.results));
@@ -380,11 +413,7 @@ async function crawlUrls(state, page, root) {
   } while (state.todo.length !== 0 || state.todoExternal.length !== 0);
 }
 
-function pretty(obj) {
-  return JSON.stringify(obj, null, 2)
-}
-
-const defaultParameters = {
+export const defaultParameters: Parameters = {
   report: undefined,
   resultJson: undefined,
   ignore: [],
@@ -394,16 +423,11 @@ const defaultParameters = {
   timeout: 10000
 };
 
-async function crawl(url, params) {
-  return crawler(params).crawl(url)
+export async function crawl(url: string, params = defaultParameters): Promise<PageResult[]> {
+  return createCrawler(params).crawl(url)
 }
 
-function crawler(params = defaultParameters) {
-  params = {...defaultParameters, ...params};
-  let browser, page;
-  if (params.debug) {
-    debug.debugOn = true;
-  }
+export function createState(params: Parameters): State {
   return {
     todo: [],
     todoExternal: [],
@@ -412,150 +436,37 @@ function crawler(params = defaultParameters) {
     checked: {},
     processing: [],
     params: params,
-    crawl: async function (root) {
+  };
+}
+
+export function createCrawler(params = defaultParameters): Crawler {
+  params = {...defaultParameters, ...params};
+  let browser: Browser, page: Page;
+  if (params.debug) {
+    (debug as any).debugOn = true;
+  }
+  const state = createState(params);
+  return {
+    state: state,
+    crawl: async function (root: string): Promise<PageResult[]> {
       if (!browser) {
-        browser = await puppeteer.launch(this.params);
+        browser = await launch(state.params);
       }
       if (!page) {
         page = await browser.newPage();
       }
 
-      this.todo.push(root);
+      state.todo.push(root);
       try {
-        await crawlUrls(this, page, root);
-        const issues = collectIssues(this.results);
-        info("checked", Object.keys(this.checked).length, "unique errors", issues.length);
-        info(this.createReportText(this.results));
-        info("results", pretty(this.results));
-        return this.results;
+        await crawlUrls(state, page, root);
+        const issues = collectIssues(state.results);
+        info("checked", Object.keys(state.checked).length, "unique errors", issues.length);
+        info(createReportText(state.results));
+        info("results", pretty(state.results));
+        return state.results;
       } finally {
         await browser.close();
       }
-    },
-    createReportHtml: function () {
-      const context = {params: this.params};
-      if (this.todo.length > 0) {
-        context.todo = this.todo;
-      }
-      if (this.results.length > 0) {
-        context.results = this.results;
-        const issues = collectIssues(this.results);
-        if (issues.length > 0) {
-          context.issues = issues;
-        }
-      }
-      if (this.checked.size > 0) {
-        context.checked = this.checked;
-      }
-      if (this.processing.length > 0) {
-        context.prosessing = this.prosessing;
-      }
-      const source = __dirname + "/reports/default.html";
-      const template = Handlebars.compile(readFile(source));
-      return template(context);
-    },
-    createReportText: function (results) {
-      const ret = [];
-      const issues = collectIssues(results);
-      for (const issue of issues) {
-        const firstLine = []
-        if (issue.error) {
-          firstLine.push("Error:", issue.error)
-        }
-        if (issue.failedUrl) {
-          firstLine.push("Url:", issue.failedUrl)
-        }
-        if (issue.status) {
-          firstLine.push("Status:", issue.status)
-        }
-        ret.push(firstLine.join(" "))
-        if (issue.stack) {
-          ret.push("- Stack: " + issue.stack)
-        }
-        if (issue.urls) {
-          ret.push(...issue.urls.map(u => " - Url: " + u))
-        }
-        if (issue.loadedBy) {
-          ret.push(...issue.loadedBy.map(l => " - Loaded by: " + l.url + " fail status: " + l.status))
-        }
-        if (issue.linkedBy) {
-          ret.push(...issue.linkedBy.map(u => " - Linked by: " + u))
-        }
-      }
-      return ret.join("\n");
-    },
-    createReportTextShort: function (results) {
-      const ret = [];
-      const issues = collectIssues(results);
-      for (const issue of issues) {
-        const firstLine = ["-"]
-        if (issue.status) {
-          firstLine.push(issue.status)
-        }
-        if (issue.error) {
-          firstLine.push("error:", issue.error)
-        }
-        if (issue.failedUrl) {
-          firstLine.push(issue.failedUrl)
-        }
-        ret.push(firstLine.join(" "))
-      }
-      return ret.join("\n");
     }
   };
-}
-
-async function startCommandLine(argv, crawlerF, defaultParameters) {
-  const urls = [];
-  const params = {};
-  for (const arg of argv) {
-    if (arg.includes(":") && defaultParameters.hasOwnProperty(arg.split(":")[0])) {
-      const [key, ...rest] = arg.split(":");
-      const defaultValue = defaultParameters[key];
-      let value = rest.join(":");
-      if (key === "ignore") {
-        value = value.split(",").map(s => /^\/.*\/$/.test(s) ? new RegExp(s.substr(1, s.length - 2)) : s)
-      } else if (typeof(defaultValue) === "boolean") {
-        value = JSON.parse(value)
-      } else if (typeof(defaultValue) === "number") {
-        value = parseInt(value)
-      }
-      params[key] = value
-    } else {
-      urls.push(arg)
-    }
-  }
-  if (urls.length > 0) {
-    const crawler = crawlerF(params);
-    for (const url of urls) {
-      await crawler.crawl(url)
-    }
-    if (params.report) {
-      info("wrote report to", params.report)
-    }
-    if (params.resultJson) {
-      info("wrote results as json to", params.resultJson)
-    }
-    const issues = collectIssues(crawler.results);
-    if (issues.length > 0) {
-      info("Exiting with error...");
-      process.exit(1)
-    }
-  }
-}
-
-function writeTextFile(filepath, output) {
-  fs.writeFileSync(filepath, output)
-}
-
-function readFile(filepath) {
-  return fs.readFileSync(filepath, "utf8")
-}
-
-if (module) {
-  module.exports = {
-    crawl: crawl,
-    crawler: crawler,
-    startCommandLine: async (argv) => startCommandLine(argv, module.exports.crawler, defaultParameters)
-  }
 }
