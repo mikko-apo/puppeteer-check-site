@@ -8,7 +8,7 @@
   },
   "scripts": {
     "test": "mocha --require ts-node/register ./test/*.spec.ts",
-    "build-dist": "tsc -p ."
+    "build": "tsc -p ."
   },
   "repository": {
     "type": "git",

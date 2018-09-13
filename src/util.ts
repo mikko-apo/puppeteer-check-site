@@ -27,3 +27,14 @@ export function pretty(obj: any) {
 export function removeFromArray(arr: any[], obj: any) {
   arr.splice(arr.indexOf(obj), 1);
 }
+
+export function pushUnique(arr: any[], ...rest: any[]): boolean {
+  let pushed = false;
+  for(const i of rest) {
+    if(!arr.includes(i)) {
+      pushed = true;
+      arr.push(i)
+    }
+  }
+  return pushed;
+}

@@ -19,7 +19,7 @@ export interface TestServer {
   makeUrl: (path: string) => string
 }
 
-function wrap(a: any) {
+function wrap(a: any): any[] {
   return Array.isArray(a) ? a : [a]
 }
 

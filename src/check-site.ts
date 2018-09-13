@@ -1,6 +1,6 @@
-import { URL } from "url";
-import {launch, Browser, Headers, Page, Request, Response} from "puppeteer";
-import {debug, info, pretty, removeFromArray, writeTextFile} from "./util";
+import {URL} from "url";
+import {Browser, Headers, launch, Page, PageEventObj, Request, Response} from "puppeteer";
+import {debug, info, pretty, pushUnique, removeFromArray, writeTextFile} from "./util";
 import {createReportHtml, createReportText, createReportTextShort} from "./reporting";
 
 export interface PageResult {
@@ -120,96 +120,99 @@ function errorToObject(error: ErrorInfo): ErrorInfo {
 
 async function crawlUrl(page: Page, crawlUrl: string, isInternal: boolean, state: State): Promise<PageResult> {
   const {params, referers} = state;
-  const succeeded: string[] = [];
-  const failed: FailUrlStatus[] = [];
   const openRequests: Request[] = [];
-  const pageErrors: ErrorInfo[] = [];
-  const errors: ErrorInfo[] = [];
-  const ignored: string[] = [];
+  const pageResult: PageResult = {
+    url: crawlUrl,
+    originalUrl: crawlUrl,
+    errors: [],
+    pageErrors: [],
+    failed: [],
+    ignored: [],
+    hrefs: [],
+    succeeded: []
+  };
+  if (!isInternal) {
+    pageResult.external = true
+  }
+  await processPage(page, pageResult, openRequests);
+  pageResult.url = page.url();
+  pageResult.hrefs.push(...await getHrefs(page, pageResult.url));
+  cleanResult(pageResult);
+  return pageResult;
 
   function isIgnored(url: string) {
     for (const ignore of params.ignore || []) {
       if (matches(ignore, url)) {
-        if (!ignored.includes(url)) {
-          ignored.push(url)
-        }
+        pushUnique(pageResult.ignored, url);
         return true;
       }
     }
     return false;
   }
 
-  function requestListener(request: Request) {
-    const url = request.url();
-    debug("request started", url);
-    if (isIgnored(url)) {
-      request.abort();
-      info("- aborting request because url is ignored", url)
-    } else {
-      openRequests.push(request);
-      request.continue();
-    }
-  }
-
-  function requestFailedListener(request: Request) {
-    const url = request.url();
-    debug("request failed", url);
-    removeFromArray(openRequests, request);
-    if (!isIgnored(url)) {
-      info("- failed", url, "errorText", request.failure().errorText);
-      failed.push({
-        url: url,
-        errorText: request.failure().errorText
-      });
-    }
-  }
-
-  function requestFinishedListener(request: Request) {
-    const url = request.url();
-    removeFromArray(openRequests, request);
-    debug("request finished", url, "unfinished", openRequests)
-  }
-
-  function responseListener(response: Response) {
-    debug("response", response.url());
-    if ([200, 204, 206, 301, 302, 304].includes(response.status())) {
-      succeeded.push(response.url());
-    } else {
-      info("- failed", response.url(), "status", response.status());
-      failed.push({url: response.url(), status: response.status()});
-    }
-  }
-
-  function errorListener(error: ErrorInfo) {
-    const ret = errorToObject(error);
-    errors.push(ret);
-    info("- error", error.message)
-  }
-
-  function pageErrorListener(error: ErrorInfo) {
-    const ret = errorToObject(error);
-    pageErrors.push(ret);
-    info("- pageerror", error.message)
-  }
-
   function handleRequestTimeout(arr: Request[], msDiff: number, resolve: () => void) {
     info("- timeout at", msDiff, "ms. Unfinished resource requests", arr.length);
     for (const request of arr) {
-      failed.push({status: "timeout", url: request.url()})
+      pageResult.failed.push({status: "timeout", url: request.url()})
     }
     arr.length = 0;
     resolve();
   }
 
-  async function processPage(page: Page): Promise<void> {
+  function createListeners(pageResult: PageResult, openRequests: Request[]) {
+    const listeners = new Map<keyof PageEventObj, any>();
+    listeners.set('request', (request: Request) => {
+      const url = request.url();
+      debug("request started", url);
+      if (isIgnored(url)) {
+        request.abort();
+        info("- aborting request because url is ignored", url)
+      } else {
+        openRequests.push(request);
+        request.continue();
+      }
+    });
+    listeners.set('requestfailed', (request: Request) => {
+      const url = request.url();
+      debug("request failed", url);
+      removeFromArray(openRequests, request);
+      if (!isIgnored(url)) {
+        info("- failed", url, "errorText", request.failure().errorText);
+        pageResult.failed.push({
+          url: url,
+          errorText: request.failure().errorText
+        });
+      }
+    });
+    listeners.set('response', (response: Response) => {
+      debug("response", response.url());
+      if ([200, 204, 206, 301, 302, 304].includes(response.status())) {
+        pageResult.succeeded.push(response.url());
+      } else {
+        info("- failed", response.url(), "status", response.status());
+        pageResult.failed.push({url: response.url(), status: response.status()});
+      }
+    });
+    listeners.set('requestfinished', (request: Request) => {
+      removeFromArray(openRequests, request);
+      debug("request finished", request.url(), "unfinished", openRequests)
+    });
+    listeners.set('pageerror', (error: ErrorInfo) => {
+      pageResult.pageErrors.push(errorToObject(error));
+      info("- pageerror", error.message)
+    });
+    listeners.set('error', (error: ErrorInfo) => {
+      pageResult.errors.push(errorToObject(error));
+      info("- error", error.message)
+    });
+    return listeners;
+  }
+
+  async function processPage(page: Page, pageResult: PageResult, openRequests: Request[]): Promise<void> {
     await page.setRequestInterception(true);
-    page.on('request', requestListener);
-    page.on('requestfailed', requestFailedListener);
-    page.on('response', responseListener);
-    page.on('requestfinished', requestFinishedListener);
-    page.on('pageerror', pageErrorListener as any);
-    page.on('error', errorListener);
-//    page.on('request', request => { console.log("REQ: " + request.url()); });
+    const listeners = createListeners(pageResult, openRequests);
+
+    listeners.forEach((value, key) => page.on(key, value));
 
     try {
       const headers: Headers = {};
@@ -222,25 +225,11 @@ async function crawlUrl(page: Page, crawlUrl: string, isInternal: boolean, state
       await scrollToEnd(page);
       await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
     } finally {
-      page.removeListener('request', requestListener);
-      page.removeListener('requestfailed', requestFailedListener);
-      page.removeListener('requestfinished', requestFinishedListener);
-      page.removeListener('response', responseListener);
-      page.removeListener('pageerror', pageErrorListener);
-      page.removeListener('error', errorListener);
+      listeners.forEach((value, key) => page.removeListener(key, value));
     }
   }
 
-  async function createResult(page: Page): Promise<PageResult> {
-    const finalUrl = page.url();
-    const pageResult: PageResult = {url: finalUrl};
-    if (!isInternal) {
-      pageResult.external = true
-    }
-    if (finalUrl !== crawlUrl) {
-      pageResult.originalUrl = crawlUrl;
-    }
-
+  async function getHrefs(page: Page, finalUrl: string) {
     const hrefs: string[] = [];
     const pageHrefs = await page.evaluate(() => {
       const anchors = document.querySelectorAll('a');
@@ -252,35 +241,38 @@ async function crawlUrl(page: Page, crawlUrl: string, isInternal: boolean, state
       if (isIgnored(urlString)) {
         info("- ignoring href", urlString)
       } else {
-        if (href.length > 0 && !hrefs.includes(href)) {
-          hrefs.push(href)
+        if (href.length > 0) {
+          pushUnique(hrefs, href)
         }
       }
     }
+    return hrefs;
+  }
 
-    if (errors.length > 0) {
-      pageResult.errors = errors;
+  function cleanResult(pageResult: PageResult) {
+    if (pageResult.url === pageResult.originalUrl) {
+      delete pageResult.originalUrl;
     }
-    if (pageErrors.length > 0) {
-      pageResult.pageErrors = pageErrors;
+    if (pageResult.errors.length === 0) {
+      delete pageResult.errors;
     }
-    if (failed.length > 0) {
-      pageResult.failed = failed;
+    if (pageResult.pageErrors.length === 0) {
+      delete pageResult.pageErrors;
     }
-    if (ignored.length > 0) {
-      pageResult.ignored = ignored;
+    if (pageResult.failed.length === 0) {
+      delete pageResult.failed;
     }
-    if (hrefs.length > 0) {
-      pageResult.hrefs = hrefs;
+    if (pageResult.ignored.length === 0) {
+      delete pageResult.ignored;
     }
-    if (succeeded.length > 0) {
-      pageResult.succeeded = succeeded;
+    if (pageResult.hrefs.length === 0) {
+      delete pageResult.hrefs;
+    }
+    if (pageResult.succeeded.length === 0) {
+      delete pageResult.succeeded;
     }
     return pageResult;
   }
-
-  await processPage(page);
-  return await createResult(page);
 }
 
 export function collectIssues(results: PageResult[]) {
@@ -310,14 +302,8 @@ export function collectIssues(results: PageResult[]) {
         loadedBy.push({url: pageResult.url, status: failed.status})
       }
     }
-    for (const error of pageResult.errors || []) {
-      addIssue(error.message || error.stack, {
-        error: error.message,
-        stack: error.stack,
-        urls: []
-      }).urls.push(pageResult.url)
-    }
-    for (const error of pageResult.pageErrors || []) {
+    const allErrors = [...(pageResult.errors || []), ...(pageResult.pageErrors || [])];
+    for (const error of allErrors) {
       addIssue(error.message || error.stack, {
         error: error.message,
         stack: error.stack,
