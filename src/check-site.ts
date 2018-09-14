@@ -2,7 +2,7 @@ import {URL} from "url";
 import {Browser, launch, LaunchOptions, Page} from "puppeteer";
 import {debug, info, pretty, removeFromArray, writeTextFile} from "./util";
 import {createReportHtml, createReportText, createReportTextShort} from "./reporting";
-import {PageProcessor} from "./page-processor";
+import {errorToObject, PageProcessor} from "./page-processor";
 
 export interface PageResult {
   url: string
@@ -192,7 +192,7 @@ async function crawlUrls(state: State, page: Page, root: string) {
       if (e.name === "TimeoutError") {
         pageResult = {url, failed: [{status: "timeout", url}]};
       } else {
-        pageResult = {url, errors: [PageProcessor.errorToObject(e)]};
+        pageResult = {url, errors: [errorToObject(e)]};
       }
     }
     removeFromArray(state.processing, url);
