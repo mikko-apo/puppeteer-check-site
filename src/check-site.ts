@@ -1,7 +1,8 @@
 import {URL} from "url";
-import {Browser, Headers, launch, LaunchOptions, Page, PageEventObj, Request, Response} from "puppeteer";
-import {debug, info, pretty, pushUnique, removeFromArray, writeTextFile} from "./util";
+import {Browser, launch, LaunchOptions, Page} from "puppeteer";
+import {debug, info, pretty, removeFromArray, writeTextFile} from "./util";
 import {createReportHtml, createReportText, createReportTextShort} from "./reporting";
+import {PageProcessor} from "./page-processor";
 
 export interface PageResult {
   url: string
@@ -21,7 +22,7 @@ interface FailUrlStatus {
   errorText?: string
 }
 
-interface ErrorInfo {
+export interface ErrorInfo {
   message?: string
   stack?: string
 }
@@ -55,6 +56,45 @@ export class State {
   constructor(params: Parameters) {
     this.params = params;
   }
+
+  private static urlToPrefix(url: URL) {
+    let s = url.protocol + "//";
+    if ((url as any).auth) {
+      s = s + (url as any).auth + "@";
+    }
+    return s + url.host;
+  }
+
+  private okToAddUrl(url: URL, urlString: string) {
+    const protocolAllowed = ["http:", "https:"].includes(url.protocol);
+    const hasNotBeenChecked = !this.checked.hasOwnProperty(urlString);
+    const isAlreadyInTodo = !this.todo.includes(urlString);
+    const isAlreadyInExternalTodo = this.todoExternal.includes(urlString);
+    const isNotEmpty = urlString.length > 0;
+    return protocolAllowed && hasNotBeenChecked && isAlreadyInTodo && !isAlreadyInExternalTodo && isNotEmpty;
+  }
+
+  addHrefs(hrefs: string[], currentUrl: string, currentIsInternal: boolean, root: string) {
+    const rootUrl = new URL(root);
+    const rootUrlStart = State.urlToPrefix(rootUrl);
+
+    for (const href of hrefs) {
+      const url = new URL(href, currentUrl);
+      const urlString = url.toString();
+      const urlStart = State.urlToPrefix(url);
+      if (this.okToAddUrl(url, urlString)) {
+        const hrefIsInternal = rootUrlStart.valueOf() === urlStart.valueOf();
+        if (hrefIsInternal) {
+          this.todo.push(urlString)
+        } else {
+          if (currentIsInternal) {
+            this.todoExternal.push(urlString)
+          }
+        }
+        this.referers[urlString] = currentUrl
+      }
+    }
+  }
 }
 
 export class Crawler {
@@ -86,223 +126,6 @@ export class Crawler {
       await this.browser.close();
     }
   }
-}
-
-async function scrollToEnd(page: Page) {
-  let scroll = true;
-  let originalPosition = await page.evaluate('window.pageYOffset');
-  while (scroll) {
-    await page.evaluate('window.scrollBy(0, window.innerHeight)');
-    let currentPosition = await page.evaluate('window.pageYOffset');
-    if (currentPosition !== originalPosition) {
-      await page.waitFor(50);
-      originalPosition = currentPosition;
-    } else {
-      scroll = false
-    }
-  }
-  return 1;
-}
-
-async function waitUntilEmpty(arr: Request[], timeoutMs: number, handleTimeout: (arr: Request[], msDiff: number, resolve: () => void, reject?: (err: any) => void) => void) {
-  const startMs = new Date().getTime();
-  return new Promise((resolve, reject) => {
-      const waitForRequestToFinish = () => {
-        if (arr.length === 0) {
-          resolve();
-        } else {
-          const msDiff = new Date().getTime() - startMs;
-          debug("Waiting for requests to finish", msDiff, timeoutMs, arr);
-          if (msDiff > timeoutMs) {
-            handleTimeout(arr, msDiff, resolve, reject)
-          } else {
-            setTimeout(waitForRequestToFinish, 1000);
-          }
-        }
-      };
-      setTimeout(waitForRequestToFinish, 500);
-    }
-  );
-}
-
-function matches(pattern: ((s: string) => boolean | RegExp | string), string: string) {
-  if (typeof(pattern) === "function") {
-    return pattern(string)
-  }
-  if ((pattern as RegExp) instanceof RegExp) {
-    return (pattern as RegExp).test(string)
-  }
-  return string.includes(pattern);
-}
-
-function errorToObject(error: ErrorInfo): ErrorInfo {
-  const ret: ErrorInfo = {};
-  const message = error.message;
-  const stack = error.stack;
-  if (message && message !== "") {
-    ret.message = message;
-  }
-  if (stack && stack !== "") {
-    ret.stack = stack;
-  }
-  return ret;
-}
-
-async function crawlUrl(page: Page, crawlUrl: string, isInternal: boolean, state: State): Promise<PageResult> {
-  const {params, referers} = state;
-  const openRequests: Request[] = [];
-  const pageResult: PageResult = {
-    url: crawlUrl,
-    originalUrl: crawlUrl,
-    errors: [],
-    pageErrors: [],
-    failed: [],
-    ignored: [],
-    hrefs: [],
-    succeeded: []
-  };
-  if (!isInternal) {
-    pageResult.external = true
-  }
-  const listeners = createListeners(pageResult, openRequests);
-  await processPage(page, listeners, openRequests);
-  pageResult.url = page.url();
-  pageResult.hrefs.push(...await getHrefs(page, pageResult.url));
-  cleanResult(pageResult);
-  return pageResult;
-
-  function isIgnored(url: string) {
-    for (const ignore of params.ignore || []) {
-      if (matches(ignore, url)) {
-        pushUnique(pageResult.ignored, url);
-        return true;
-      }
-    }
-    return false;
-  }
-
-  function handleRequestTimeout(arr: Request[], msDiff: number, resolve: () => void) {
-    info("- timeout at", msDiff, "ms. Unfinished resource requests", arr.length);
-    for (const request of arr) {
-      pageResult.failed.push({status: "timeout", url: request.url()})
-    }
-    arr.length = 0;
-    resolve();
-  }
-
-  function createListeners(pageResult: PageResult, openRequests: Request[]) {
-    const listeners = new Map<keyof PageEventObj, any>();
-    listeners.set('request', (request: Request) => {
-      const url = request.url();
-      debug("request started", url);
-      if (isIgnored(url)) {
-        request.abort();
-        info("- aborting request because url is ignored", url)
-      } else {
-        openRequests.push(request);
-        request.continue();
-      }
-    });
-    listeners.set('requestfailed', (request: Request) => {
-      const url = request.url();
-      debug("request failed", url);
-      removeFromArray(openRequests, request);
-      if (!isIgnored(url)) {
-        info("- failed", url, "errorText", request.failure().errorText);
-        pageResult.failed.push({
-          url: url,
-          errorText: request.failure().errorText
-        });
-      }
-    });
-    listeners.set('response', (response: Response) => {
-      debug("response", response.url());
-      if ([200, 204, 206, 301, 302, 304].includes(response.status())) {
-        pageResult.succeeded.push(response.url());
-      } else {
-        info("- failed", response.url(), "status", response.status());
-        pageResult.failed.push({url: response.url(), status: response.status()});
-      }
-    });
-    listeners.set('requestfinished', (request: Request) => {
-      removeFromArray(openRequests, request);
-      debug("request finished", request.url(), "unfinished", openRequests)
-    });
-    listeners.set('pageerror', (error: ErrorInfo) => {
-      pageResult.pageErrors.push(errorToObject(error));
-      info("- pageerror", error.message)
-    });
-    listeners.set('error', (error: ErrorInfo) => {
-      pageResult.errors.push(errorToObject(error));
-      info("- error", error.message)
-    });
-    return listeners;
-  }
-
-  async function processPage(page: Page, listeners: Map<keyof PageEventObj, any>, openRequests: Request[]): Promise<void> {
-    const headers: Headers = {};
-    if (referers[crawlUrl]) {
-      headers.referer = referers[crawlUrl]
-    }
-    await page.setExtraHTTPHeaders(headers);
-    await page.setRequestInterception(true);
-
-    listeners.forEach((value, key) => page.on(key, value));
-
-    try {
-      await page.goto(crawlUrl, {waitUntil: 'domcontentloaded', timeout: params.timeout});
-      await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
-      await scrollToEnd(page);
-      await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
-    } finally {
-      listeners.forEach((value, key) => page.removeListener(key, value));
-    }
-  }
-
-  async function getHrefs(page: Page, finalUrl: string) {
-    const hrefs: string[] = [];
-    const pageHrefs = await page.evaluate(() => {
-      const anchors = document.querySelectorAll('a');
-      return [].map.call(anchors, (a: any) => a.href);
-    });
-    for (const href of pageHrefs) {
-      const url = new URL(href, finalUrl);
-      const urlString = url.toString();
-      if (isIgnored(urlString)) {
-        info("- ignoring href", urlString)
-      } else {
-        if (href.length > 0) {
-          pushUnique(hrefs, href)
-        }
-      }
-    }
-    return hrefs;
-  }
-}
-
-function cleanResult(pageResult: PageResult) {
-  if (pageResult.url === pageResult.originalUrl) {
-    delete pageResult.originalUrl;
-  }
-  if (pageResult.errors.length === 0) {
-    delete pageResult.errors;
-  }
-  if (pageResult.pageErrors.length === 0) {
-    delete pageResult.pageErrors;
-  }
-  if (pageResult.failed.length === 0) {
-    delete pageResult.failed;
-  }
-  if (pageResult.ignored.length === 0) {
-    delete pageResult.ignored;
-  }
-  if (pageResult.hrefs.length === 0) {
-    delete pageResult.hrefs;
-  }
-  if (pageResult.succeeded.length === 0) {
-    delete pageResult.succeeded;
-  }
-  return pageResult;
 }
 
 export function collectIssues(results: PageResult[]) {
@@ -355,45 +178,6 @@ export function collectIssues(results: PageResult[]) {
   return ret;
 }
 
-function okToAddUrl(state: State, url: URL, urlString: string) {
-  const protocolAllowed = ["http:", "https:"].includes(url.protocol);
-  const hasNotBeenChecked = !state.checked.hasOwnProperty(urlString);
-  const isAlreadyInTodo = !state.todo.includes(urlString);
-  const isAlreadyInExternalTodo = state.todoExternal.includes(urlString);
-  const isNotEmpty = urlString.length > 0;
-  return protocolAllowed && hasNotBeenChecked && isAlreadyInTodo && !isAlreadyInExternalTodo && isNotEmpty;
-}
-
-function urlToPrefix(url: URL) {
-  let s = url.protocol + "//";
-  if ((url as any).auth) {
-    s = s + (url as any).auth + "@";
-  }
-  return s + url.host;
-}
-
-function addHrefsToState(hrefs: string[], state: State, currentUrl: string, currentIsInternal: boolean, root: string) {
-  const rootUrl = new URL(root);
-  const rootUrlStart = urlToPrefix(rootUrl);
-
-  for (const href of hrefs) {
-    const url = new URL(href, currentUrl);
-    const urlString = url.toString();
-    const urlStart = urlToPrefix(url);
-    if (okToAddUrl(state, url, urlString)) {
-      const hrefIsInternal = rootUrlStart.valueOf() === urlStart.valueOf();
-      if (hrefIsInternal) {
-        state.todo.push(urlString)
-      } else {
-        if (currentIsInternal) {
-          state.todoExternal.push(urlString)
-        }
-      }
-      state.referers[urlString] = currentUrl
-    }
-  }
-}
-
 async function crawlUrls(state: State, page: Page, root: string) {
   do {
     const isInternal = state.todo.length > 0;
@@ -402,19 +186,20 @@ async function crawlUrls(state: State, page: Page, root: string) {
     state.processing.push(url);
     let pageResult: PageResult = undefined;
     try {
-      pageResult = await crawlUrl(page, url, isInternal, state);
+      const pageProcessor = new PageProcessor(page);
+      pageResult = await pageProcessor.process(url, isInternal, state);
     } catch (e) {
       if (e.name === "TimeoutError") {
         pageResult = {url, failed: [{status: "timeout", url}]};
       } else {
-        pageResult = {url, errors: [errorToObject(e)]};
+        pageResult = {url, errors: [PageProcessor.errorToObject(e)]};
       }
     }
     removeFromArray(state.processing, url);
     state.results.push(pageResult);
     state.checked[url] = true;
     if (pageResult.hrefs) {
-      addHrefsToState(pageResult.hrefs, state, pageResult.url, isInternal, root)
+      state.addHrefs(pageResult.hrefs, pageResult.url, isInternal, root)
     }
     const issues = collectIssues([pageResult]);
     if (issues.length > 0) {
