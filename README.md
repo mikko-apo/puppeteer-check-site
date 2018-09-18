@@ -10,14 +10,23 @@ Features:
 * Simulates a real browser session and user activity
   * Supports lazy loading of elements by scrolling through the whole page.
   * Referer header is sent for referenced pages
+* Checks the whole site or a segment or just a page or urls matching a regexp pattern 
 
 # Upcoming features
-* Checks the whole site, or a segment or just a page. 
 * Commandline report
 * Support redirects 
-* Link check strategies: Page, Site, Segment
 * incorrect url is saved: https://www.reaktor.com/blog/youre-hired-in-other-words-how-to-get-a-job-at-reaktor/#finnishVersion
 * close tab and reopen tab after n operations
 * parallel operations: tabs & browsers
 * app packaging: https://github.com/nexe/nexe or https://github.com/zeit/pkg
 * site checker: https://www.npmjs.com/package/bs-broken-links-checker
+
+# Command line parameters
+
+* scan: [site|page|segment|/regexp/]
+  * site: (auth@)host - same auth and host, http or https, any port, any path
+  * page: (auth@)host:port/path - same auth, host, port and path
+  * segment: page or any path below it: When root is http://localhost/a
+    * following urls are scanned: http://localhost/a/b, http://localhost/a?123
+    * following urls are considered external: http://localhost/aB  
+ 

@@ -1,6 +1,6 @@
 import {launch} from "./testApp";
 import {deepStrictEqual} from "assert";
-import {crawl, createCrawler} from "../src/check-site";
+import {crawl, createCrawler, defaultParameters, State} from "../src/check-site";
 import {createReportHtml} from "../src/reporting";
 import {parseParams} from "../src/commandline";
 
@@ -189,10 +189,10 @@ describe('Ignore urls', () => {
 describe('Catch error for non-existing page', () => {
   const expectedResult = [
     {
-      "url": "http://reaktor2234.com",
+      "url": "http://localhost:33",
       "errors": [
         {
-          "message": "net::ERR_NAME_NOT_RESOLVED at http://reaktor2234.com"
+          "message": "net::ERR_CONNECTION_REFUSED at http://localhost:33"
         }
       ]
     }
@@ -200,11 +200,11 @@ describe('Catch error for non-existing page', () => {
 
   it('Catch error', async () => {
     const crawler = createCrawler();
-    const res = await crawler.crawl("http://reaktor2234.com");
+    const res = await crawler.crawl("http://localhost:33");
     delete res[0].errors[0].stack;
     eq(res, expectedResult);
     containsInOrder(createReportHtml(crawler.state),
-      "Issues: 1", "net::ERR_NAME_NOT_RESOLVED at http://reaktor2234.com", //"Error stack:","https://reaktor2234.com",
+      "Issues: 1", "net::ERR_CONNECTION_REFUSED at http://localhost:33", //"Error stack:","http://localhost:33",
       "Checked 1 pages", "Errors 1:"
     )
 
@@ -288,24 +288,96 @@ describe('Referer', () => {
   })
 });
 
+describe('scan', () => {
+  it('site', () => {
+      const state = new State(defaultParameters)
+      state.params.scan = 'site'
+      state.addHrefs([
+        "a",
+        "a/b",
+        "http://localhost:8080" // external
+      ], "http://localhost/c", true, "http://localhost/d")
+      eq(state.todo, [
+        "http://localhost/a",
+        "http://localhost/a/b"
+      ])
+      eq(state.todoExternal, ["http://localhost:8080/"])
+  })
+  it('page', () => {
+      const state = new State(defaultParameters)
+      state.params.scan = 'page'
+      state.addHrefs([
+        "?567",
+        "#foo",
+        "a",
+      ], "http://localhost/d?123", true, "http://localhost/d")
+      eq(state.todo, [
+        "http://localhost/d?567",
+        "http://localhost/d?123#foo"
+      ])
+      eq(state.todoExternal, [
+        "http://localhost/a"
+      ])
+  })
+  it('segment', () => {
+      const state = new State(defaultParameters)
+      state.params.scan = 'segment'
+      state.addHrefs([
+        "http://localhost/a/b",
+        "?123",
+        "http://localhost/aB",
+      ], "http://localhost/a", true, "http://localhost/a")
+      eq(state.todo, [
+        "http://localhost/a/b",
+        "http://localhost/a?123"
+      ])
+      eq(state.todoExternal, [
+        "http://localhost/aB"
+      ])
+  })
+  it('segment', () => {
+    const state = new State(defaultParameters)
+    state.params.scan = /.*a$/
+    state.addHrefs([
+      "http://localhost/a/a",
+      "?123",
+      "?12a",
+      "http://localhost/aB",
+    ], "http://localhost/a", true, "http://localhost/")
+    eq(state.todo, [
+      "http://localhost/a/a",
+      "http://localhost/a?12a"
+    ])
+    eq(state.todoExternal, [
+      "http://localhost/a?123",
+      "http://localhost/aB"
+    ])
+  })
+})
+
 describe("Commandline parsing", () => {
-  it('single host', async () => {
+  it('single host', () => {
     const urls: string[] = [];
     parseParams(["localhost"], urls);
     eq(urls, ["localhost"])
   });
 
-  it('single host debug', async () => {
+  it('single host debug', () => {
     const urls: string[] = [];
     const params = parseParams(["localhost", "debug:true"], urls);
     eq(params, {"debug": true})
     eq(urls, ["localhost"])
   });
 
-  it('two hosts ignore', async () => {
+  it('two hosts ignore', () => {
     const urls: string[] = [];
-    const params =  parseParams(["localhost", "foo", "ignore:test,/pow:pow/"], urls);
+    const params = parseParams(["localhost", "foo", "ignore:test,/pow:pow/"], urls);
     eq(params, {"ignore": ["test", /pow:pow/]})
     eq(urls, ["localhost", "foo"])
+  })
+  it('scan', () => {
+    const urls: string[] = [];
+    eq(parseParams(["scan:page"], urls), {"scan": "page"})
+    eq(parseParams(["scan:/pow/"], urls), {"scan": /pow/})
   })
 });

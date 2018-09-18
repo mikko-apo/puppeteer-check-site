@@ -37,11 +37,18 @@ export interface Issue {
   linkedBy?: string[]
 }
 
+interface ScanOptions {
+  "page": true,
+  "site": true,
+  "segment": true
+}
+
 export interface Parameters {
   [index: string]: any
 
   report?: string
   resultJson?: string
+  scan?: keyof ScanOptions | RegExp
 }
 
 export class State {
@@ -57,14 +64,6 @@ export class State {
     this.params = params;
   }
 
-  private static urlToPrefix(url: URL) {
-    let s = url.protocol + "//";
-    if ((url as any).auth) {
-      s = s + (url as any).auth + "@";
-    }
-    return s + url.host;
-  }
-
   private okToAddUrl(url: URL, urlString: string) {
     const protocolAllowed = ["http:", "https:"].includes(url.protocol);
     const hasNotBeenChecked = !this.checked.hasOwnProperty(urlString);
@@ -76,15 +75,12 @@ export class State {
 
   addHrefs(hrefs: string[], currentUrl: string, currentIsInternal: boolean, root: string) {
     const rootUrl = new URL(root);
-    const rootUrlStart = State.urlToPrefix(rootUrl);
 
     for (const href of hrefs) {
       const url = new URL(href, currentUrl);
       const urlString = url.toString();
-      const urlStart = State.urlToPrefix(url);
       if (this.okToAddUrl(url, urlString)) {
-        const hrefIsInternal = rootUrlStart.valueOf() === urlStart.valueOf();
-        if (hrefIsInternal) {
+        if (this.urlIsScanned(rootUrl, url)) {
           this.todo.push(urlString)
         } else {
           if (currentIsInternal) {
@@ -94,6 +90,49 @@ export class State {
         this.referers[urlString] = currentUrl
       }
     }
+  }
+
+  private urlIsScanned(rootUrl: URL, url: URL) {
+    switch(this.params.scan) {
+      case "site": {
+        return State.siteUrlAsString(rootUrl).valueOf() === State.siteUrlAsString(url).valueOf();
+      }
+      case "page": {
+        return State.pageUrlAsString(rootUrl).valueOf() === State.pageUrlAsString(url).valueOf();
+      }
+      case "segment": {
+        const isSamePage = State.pageUrlAsString(rootUrl).valueOf() === State.pageUrlAsString(url).valueOf();
+        console.log(url.toString(), State.pathAsDir(url))
+        const isChild = url.toString().startsWith(State.pathAsDir(rootUrl))
+        return isSamePage || isChild;
+      }
+      default: {
+        return this.params.scan.test(url.toString());
+      }
+    }
+  }
+
+  private static siteUrlAsString(url: URL) {
+    const parts = [];
+    if ((url as any).auth) {
+      parts.push((url as any).auth,  "@");
+    }
+    parts.push(url.host);
+    return parts.join("");
+  }
+
+  private static pageUrlAsString(url: URL) {
+    const parts = [];
+    if ((url as any).auth) {
+      parts.push((url as any).auth,  "@");
+    }
+    parts.push(url.host, ":", url.port, url.pathname);
+    return  parts.join();
+  }
+
+  private static pathAsDir(url: URL) {
+    const s = url.toString();
+    return s.endsWith("/")? s : `${s}/`;
   }
 }
 
@@ -215,6 +254,7 @@ async function crawlUrls(state: State, page: Page, root: string) {
 }
 
 export const defaultParameters: Parameters = {
+  scan: 'site',
   report: undefined,
   resultJson: undefined,
   ignore: [],

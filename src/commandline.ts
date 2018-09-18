@@ -1,14 +1,24 @@
 import {collectIssues, Crawler, createCrawler, defaultParameters, Parameters} from "./check-site";
 import {info} from "./util";
 
+function isRegExp(s: string) {
+  return /^\/.*\/$/.test(s);
+}
+
+function parseRegexpFromString(s: string) {
+  return new RegExp(s.substr(1, s.length - 2));
+}
+
 export function parseParams(argv: string[], urls: string[]) {
   const params: Parameters = {};
   for (const arg of argv) {
     if (arg.includes(":") && defaultParameters.hasOwnProperty(arg.split(":")[0])) {
       const [key, ...rest] = arg.split(":");
       const defaultValue = defaultParameters[key];
-      let value: string | number | (string | RegExp)[] = rest.join(":");
-      if (key === "ignore") {
+      let value: string | number | (string | RegExp)[] | RegExp = rest.join(":");
+      if (key === "scan") {
+        value = isRegExp(value) ? parseRegexpFromString(value) : value
+      } else if (key === "ignore") {
         value = value.split(",").map(s => /^\/.*\/$/.test(s) ? new RegExp(s.substr(1, s.length - 2)) : s)
       } else if (typeof(defaultValue) === "boolean") {
         value = JSON.parse(value)
