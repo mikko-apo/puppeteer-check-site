@@ -319,9 +319,9 @@ describe('scan', () => {
         "http://localhost/a"
       ])
   })
-  it('segment', () => {
+  it('section', () => {
       const state = new State(defaultParameters)
-      state.params.scan = 'segment'
+      state.params.scan = 'section'
       state.addHrefs([
         "http://localhost/a/b",
         "?123",
@@ -335,7 +335,7 @@ describe('scan', () => {
         "http://localhost/aB"
       ])
   })
-  it('segment', () => {
+  it('regexp', () => {
     const state = new State(defaultParameters)
     state.params.scan = /.*a$/
     state.addHrefs([

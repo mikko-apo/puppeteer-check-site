@@ -14,7 +14,10 @@ Features:
 
 # Upcoming features
 * Commandline report
-* Support redirects 
+* Support redirects
+* headers
+* retries
+* config file
 * incorrect url is saved: https://www.reaktor.com/blog/youre-hired-in-other-words-how-to-get-a-job-at-reaktor/#finnishVersion
 * close tab and reopen tab after n operations
 * parallel operations: tabs & browsers
@@ -23,10 +26,10 @@ Features:
 
 # Command line parameters
 
-* scan: [site|page|segment|/regexp/]
-  * site: (auth@)host - same auth and host, http or https, any port, any path
-  * page: (auth@)host:port/path - same auth, host, port and path
-  * segment: page or any path below it: When root is http://localhost/a
+* scan: [site|page|section|/regexp/]
+  * site: same auth and host, http or https, any port, any path - (auth@)host
+  * page: same auth, host, port and path - (auth@)host:port/path
+  * section: page or any path below it: When root is http://localhost/a
     * following urls are scanned: http://localhost/a/b, http://localhost/a?123
     * following urls are considered external: http://localhost/aB  
- 
+  * regexp: Define a regexp pattern, for example: `/blog/` 

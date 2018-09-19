@@ -40,7 +40,7 @@ export interface Issue {
 interface ScanOptions {
   "page": true,
   "site": true,
-  "segment": true
+  "section": true
 }
 
 export interface Parameters {
@@ -100,10 +100,10 @@ export class State {
       case "page": {
         return State.pageUrlAsString(rootUrl).valueOf() === State.pageUrlAsString(url).valueOf();
       }
-      case "segment": {
+      case "section": {
         const isSamePage = State.pageUrlAsString(rootUrl).valueOf() === State.pageUrlAsString(url).valueOf();
-        console.log(url.toString(), State.pathAsDir(url))
-        const isChild = url.toString().startsWith(State.pathAsDir(rootUrl))
+        console.log(url.toString(), State.pathAsDir(url));
+        const isChild = url.toString().startsWith(State.pathAsDir(rootUrl));
         return isSamePage || isChild;
       }
       default: {
