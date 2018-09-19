@@ -49,6 +49,14 @@ export interface Parameters {
   report?: string
   resultJson?: string
   scan?: keyof ScanOptions | RegExp
+  require?: RequiredInterceptor[]
+}
+
+export type PageReadyHandler = <T> (page: Page, pageResult: PageResult, state: State) => Promise<T>
+
+export interface RequiredInterceptor {
+  path: string
+  onPageReady?: PageReadyHandler
 }
 
 export class State {
@@ -261,7 +269,8 @@ export const defaultParameters: Parameters = {
   headless: true,
   devtools: false,
   debug: false,
-  timeout: 10000
+  timeout: 10000,
+  require: []
 };
 
 export async function crawl(url: string, params = defaultParameters): Promise<PageResult[]> {

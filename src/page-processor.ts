@@ -1,7 +1,7 @@
 import {Headers, Page, PageEventObj, Request, Response} from "puppeteer";
 import {debug, info, pushUnique, removeFromArray} from "./util";
 import {URL} from "url";
-import {ErrorInfo, PageResult, State} from "./check-site";
+import {Crawler, ErrorInfo, PageReadyHandler, PageResult, RequiredInterceptor, State} from "./check-site";
 
 export class PageProcessor {
   page: Page;
@@ -16,7 +16,7 @@ export class PageProcessor {
     const handleRequestTimeout = createRequestTimeoutHandler(pageResult);
     const openRequests: Request[] = [];
     const listeners = createListeners(pageResult, openRequests, isIgnored);
-    await this.processPage(url, state, listeners, openRequests, handleRequestTimeout);
+    await this.processPage(url, pageResult, state, listeners, openRequests, handleRequestTimeout);
     const pageHrefs = await getHrefs(this.page);
     pageResult.url = this.page.url();
     pageResult.hrefs.push(...collectHrefs(pageHrefs, pageResult.url, isIgnored));
@@ -24,7 +24,7 @@ export class PageProcessor {
     return pageResult;
   }
   
-  private async processPage(url: string, state: State, listeners: Map<keyof PageEventObj, any>, openRequests: Request[], handleRequestTimeout: (arr: Request[], msDiff: number, resolve: () => void) => void): Promise<void> {
+  private async processPage(url: string, pageResult: PageResult, state: State, listeners: Map<keyof PageEventObj, any>, openRequests: Request[], handleRequestTimeout: (arr: Request[], msDiff: number, resolve: () => void) => void): Promise<void> {
     const {params} = state;
     const page = this.page;
     const headers: Headers = {};
@@ -41,9 +41,35 @@ export class PageProcessor {
       await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
       await scrollToEnd(page);
       await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
+      await this.handleOnPageLoad(pageResult, state)
     } finally {
       listeners.forEach((value, key) => page.removeListener(key, value));
     }
+  }
+
+  private async handleOnPageLoad(pageResult: PageResult, state: State) {
+    const pageReadyHandlers: RequiredInterceptor[] = state.params.require.filter( r => r.onPageReady)
+    if(pageReadyHandlers.length > 0) {
+      await scrollToTop(this.page);
+      for(const handler of pageReadyHandlers) {
+        try {
+          await this.callHandler(handler.onPageReady, pageResult, state)
+        } catch (err) {
+          info(`- ${handler.path} threw an error`, err);
+          err.message = `${handler.path} threw an error: ${err.message}`
+          pageResult.errors.push(errorToObject(err));
+          break;
+        }
+      }
+    }
+  }
+
+  private async callHandler(handler: PageReadyHandler, pageResult: PageResult, state: State) {
+    const p = handler(this.page, pageResult, state);
+    if(p instanceof Promise) {
+      return p;
+    }
+    return Promise.resolve(true)
   }
 }
 
@@ -166,6 +192,10 @@ async function waitUntilEmpty(arr: Request[], timeoutMs: number, handleTimeout: 
       setTimeout(waitForRequestToFinish, 500);
     }
   );
+}
+
+async function scrollToTop(page: Page) {
+  return await page.evaluate('window.scrollTo(0,0)');
 }
 
 async function scrollToEnd(page: Page) {

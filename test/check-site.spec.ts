@@ -2,7 +2,7 @@ import {launch} from "./testApp";
 import {deepStrictEqual} from "assert";
 import {crawl, createCrawler, defaultParameters, State} from "../src/check-site";
 import {createReportHtml} from "../src/reporting";
-import {parseParams} from "../src/commandline";
+import {parseParams, startCommandLine} from "../src/commandline";
 
 const app = launch();
 const app2 = launch();
@@ -290,50 +290,50 @@ describe('Referer', () => {
 
 describe('scan', () => {
   it('site', () => {
-      const state = new State(defaultParameters)
-      state.params.scan = 'site'
-      state.addHrefs([
-        "a",
-        "a/b",
-        "http://localhost:8080" // external
-      ], "http://localhost/c", true, "http://localhost/d")
-      eq(state.todo, [
-        "http://localhost/a",
-        "http://localhost/a/b"
-      ])
-      eq(state.todoExternal, ["http://localhost:8080/"])
+    const state = new State(defaultParameters)
+    state.params.scan = 'site'
+    state.addHrefs([
+      "a",
+      "a/b",
+      "http://localhost:8080" // external
+    ], "http://localhost/c", true, "http://localhost/d")
+    eq(state.todo, [
+      "http://localhost/a",
+      "http://localhost/a/b"
+    ])
+    eq(state.todoExternal, ["http://localhost:8080/"])
   })
   it('page', () => {
-      const state = new State(defaultParameters)
-      state.params.scan = 'page'
-      state.addHrefs([
-        "?567",
-        "#foo",
-        "a",
-      ], "http://localhost/d?123", true, "http://localhost/d")
-      eq(state.todo, [
-        "http://localhost/d?567",
-        "http://localhost/d?123#foo"
-      ])
-      eq(state.todoExternal, [
-        "http://localhost/a"
-      ])
+    const state = new State(defaultParameters)
+    state.params.scan = 'page'
+    state.addHrefs([
+      "?567",
+      "#foo",
+      "a",
+    ], "http://localhost/d?123", true, "http://localhost/d")
+    eq(state.todo, [
+      "http://localhost/d?567",
+      "http://localhost/d?123#foo"
+    ])
+    eq(state.todoExternal, [
+      "http://localhost/a"
+    ])
   })
   it('section', () => {
-      const state = new State(defaultParameters)
-      state.params.scan = 'section'
-      state.addHrefs([
-        "http://localhost/a/b",
-        "?123",
-        "http://localhost/aB",
-      ], "http://localhost/a", true, "http://localhost/a")
-      eq(state.todo, [
-        "http://localhost/a/b",
-        "http://localhost/a?123"
-      ])
-      eq(state.todoExternal, [
-        "http://localhost/aB"
-      ])
+    const state = new State(defaultParameters)
+    state.params.scan = 'section'
+    state.addHrefs([
+      "http://localhost/a/b",
+      "?123",
+      "http://localhost/aB",
+    ], "http://localhost/a", true, "http://localhost/a")
+    eq(state.todo, [
+      "http://localhost/a/b",
+      "http://localhost/a?123"
+    ])
+    eq(state.todoExternal, [
+      "http://localhost/aB"
+    ])
   })
   it('regexp', () => {
     const state = new State(defaultParameters)
@@ -354,6 +354,54 @@ describe('scan', () => {
     ])
   })
 })
+
+describe('require', () => {
+  it('function that returns promise', async () => {
+    const expectedResult = [{
+      "url": app.makeUrl("a"),
+      "ignored": ["123"]
+    }];
+
+    app.siteData = {
+      a: {}
+    };
+    const params = parseParams([`require:${__dirname}/pageReadyTest.ts`], [app.makeUrl("a")])
+    const crawler = createCrawler(params);
+    const res = await crawler.crawl(app.makeUrl("a"));
+    eq(res, expectedResult)
+  })
+
+  it('async function that returns an error', async () => {
+    const expectedResult = [{
+      "url": app.makeUrl("a"),
+      "ignored": ["2"]
+    }];
+
+    app.siteData = {
+      a: {}
+    };
+    const params = parseParams([`require:${__dirname}/pageReadyTestAsync.ts`], [app.makeUrl("a")])
+    const crawler = createCrawler(params);
+    const res = await crawler.crawl(app.makeUrl("a"));
+    eq(res, expectedResult)
+  })
+
+  it('async function', async () => {
+    const expectedResult = [{
+      "url": app.makeUrl("a"),
+      "ignored": ["2"]
+    }];
+
+    app.siteData = {
+      a: {}
+    };
+    const params = parseParams([`require:${__dirname}/pageReadyTestError.ts`], [app.makeUrl("a")])
+    const crawler = createCrawler(params);
+    const res = await crawler.crawl(app.makeUrl("a"));
+    eq(res[0].errors[0].message, `${__dirname}/pageReadyTestError.ts threw an error: Evaluation failed: SyntaxError: Unexpected number`)
+  })
+})
+
 
 describe("Commandline parsing", () => {
   it('single host', () => {

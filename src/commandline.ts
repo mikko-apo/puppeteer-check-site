@@ -1,4 +1,5 @@
-import {collectIssues, Crawler, createCrawler, defaultParameters, Parameters} from "./check-site";
+import * as path from "path";
+import {collectIssues, Crawler, createCrawler, defaultParameters, Parameters, RequiredInterceptor} from "./check-site";
 import {info} from "./util";
 
 function isRegExp(s: string) {
@@ -9,17 +10,29 @@ function parseRegexpFromString(s: string) {
   return new RegExp(s.substr(1, s.length - 2));
 }
 
+function resolvePath(filePath: string) {
+  return filePath.startsWith("/") ? filePath : path.join(process.cwd(), filePath);
+}
+
+function loadInterceptor(filePath: string): RequiredInterceptor {
+  const interceptor = require(resolvePath(filePath))
+   interceptor.path = filePath
+  return interceptor;
+}
+
 export function parseParams(argv: string[], urls: string[]) {
   const params: Parameters = {};
   for (const arg of argv) {
     if (arg.includes(":") && defaultParameters.hasOwnProperty(arg.split(":")[0])) {
       const [key, ...rest] = arg.split(":");
       const defaultValue = defaultParameters[key];
-      let value: string | number | (string | RegExp)[] | RegExp = rest.join(":");
+      let value: string | number | (string | RegExp)[] | RegExp | RequiredInterceptor[] = rest.join(":");
       if (key === "scan") {
         value = isRegExp(value) ? parseRegexpFromString(value) : value
       } else if (key === "ignore") {
         value = value.split(",").map(s => /^\/.*\/$/.test(s) ? new RegExp(s.substr(1, s.length - 2)) : s)
+      } else if (key === "require") {
+        value = value.split(",").map((path) => loadInterceptor(path))
       } else if (typeof(defaultValue) === "boolean") {
         value = JSON.parse(value)
       } else if (typeof(defaultValue) === "number") {
