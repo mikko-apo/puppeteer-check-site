@@ -5,6 +5,8 @@ import {createReportHtml, createReportText, createReportTextShort} from "./repor
 import {errorToObject, PageProcessor} from "./page-processor";
 
 export interface PageResult {
+  [index: string]: any
+
   url: string
   external?: boolean
   originalUrl?: string
@@ -49,14 +51,26 @@ export interface Parameters {
   report?: string
   resultJson?: string
   scan?: keyof ScanOptions | RegExp
-  require?: RequiredInterceptor[]
+  require?: ScanListener[]
 }
 
-export type PageReadyHandler = <T> (page: Page, pageResult: PageResult, state: State) => Promise<T>
+export type MatcherType = string | RegExp | ((s: string) => boolean)
 
-export interface RequiredInterceptor {
-  path: string
-  onPageReady?: PageReadyHandler
+export type PageAttachHandler = <T> (page: Page, state: State) => Promise<T>
+export type PageCheckReadyHandler = <T> (page: Page, pageResult: PageResult, state: State) => Promise<T>
+export type PageDetachHandler = <T> (page: Page, state: State) => Promise<T>
+
+export interface ScanListener {
+  urls?: MatcherType[]
+  path?: string
+  name?: string
+  onPageAttach?: PageAttachHandler
+  onPageCheckReady?: PageCheckReadyHandler
+  onPageDetach?: PageDetachHandler
+}
+
+export interface ScanListenerDef extends ScanListener {
+  listeners?: ScanListener[]
 }
 
 export class State {
@@ -69,7 +83,7 @@ export class State {
   params: Parameters;
 
   constructor(params: Parameters) {
-    this.params = params;
+    this.params = {...params};
   }
 
   private okToAddUrl(url: URL, urlString: string) {
@@ -101,7 +115,7 @@ export class State {
   }
 
   private urlIsScanned(rootUrl: URL, url: URL) {
-    switch(this.params.scan) {
+    switch (this.params.scan) {
       case "site": {
         return State.siteUrlAsString(rootUrl).valueOf() === State.siteUrlAsString(url).valueOf();
       }
@@ -123,7 +137,7 @@ export class State {
   private static siteUrlAsString(url: URL) {
     const parts = [];
     if ((url as any).auth) {
-      parts.push((url as any).auth,  "@");
+      parts.push((url as any).auth, "@");
     }
     parts.push(url.host);
     return parts.join("");
@@ -132,15 +146,15 @@ export class State {
   private static pageUrlAsString(url: URL) {
     const parts = [];
     if ((url as any).auth) {
-      parts.push((url as any).auth,  "@");
+      parts.push((url as any).auth, "@");
     }
     parts.push(url.host, ":", url.port, url.pathname);
-    return  parts.join();
+    return parts.join();
   }
 
   private static pathAsDir(url: URL) {
     const s = url.toString();
-    return s.endsWith("/")? s : `${s}/`;
+    return s.endsWith("/") ? s : `${s}/`;
   }
 }
 
@@ -229,7 +243,12 @@ async function crawlUrls(state: State, page: Page, root: string) {
   do {
     const isInternal = state.todo.length > 0;
     const url = isInternal ? state.todo.shift() : state.todoExternal.shift();
-    info("check", url, "checked", Object.keys(state.checked).length, "todo", state.todo.length, "todo external", state.todoExternal.length, "unique issues", collectIssues(state.results).length);
+    info("check", url,
+      "internal", isInternal,
+      "checked", Object.keys(state.checked).length,
+      "todo", state.todo.length,
+      "todo external", state.todoExternal.length,
+      "unique issues", collectIssues(state.results).length);
     state.processing.push(url);
     let pageResult: PageResult = undefined;
     try {

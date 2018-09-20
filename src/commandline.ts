@@ -1,5 +1,13 @@
 import * as path from "path";
-import {collectIssues, Crawler, createCrawler, defaultParameters, Parameters, RequiredInterceptor} from "./check-site";
+import {
+  collectIssues,
+  Crawler,
+  createCrawler,
+  defaultParameters,
+  Parameters,
+  ScanListener,
+  ScanListenerDef
+} from "./check-site";
 import {info} from "./util";
 
 function isRegExp(s: string) {
@@ -14,10 +22,32 @@ function resolvePath(filePath: string) {
   return filePath.startsWith("/") ? filePath : path.join(process.cwd(), filePath);
 }
 
-function loadInterceptor(filePath: string): RequiredInterceptor {
-  const interceptor = require(resolvePath(filePath))
-   interceptor.path = filePath
-  return interceptor;
+function loadListeners(filePath: string): ScanListener[] {
+  const listeners: ScanListener[] = [];
+  const listenerDef : ScanListenerDef = require(resolvePath(filePath));
+  if(listenerDef.onPageCheckReady) {
+    listenerDef.path = filePath;
+    listeners.push(listenerDef)
+  }
+  if(listenerDef.listeners) {
+    listenerDef.listeners.forEach((listener: ScanListener, i) => {
+      listener.path = filePath;
+      if(!listener.name) {
+        listener.name = `${i}`
+      }
+      listeners.push(listener)
+    })
+  }
+  listenerDef.path = filePath;
+  return listeners;
+}
+
+function baseValue<T>(map: any, key: string, base: T): T {
+  if (map[key]) {
+    return map[key] as T;
+  }
+  map[key] = base;
+  return base;
 }
 
 export function parseParams(argv: string[], urls: string[]) {
@@ -26,19 +56,22 @@ export function parseParams(argv: string[], urls: string[]) {
     if (arg.includes(":") && defaultParameters.hasOwnProperty(arg.split(":")[0])) {
       const [key, ...rest] = arg.split(":");
       const defaultValue = defaultParameters[key];
-      let value: string | number | (string | RegExp)[] | RegExp | RequiredInterceptor[] = rest.join(":");
+      const v = rest.join(":");
+      let value: string | number | (string | RegExp)[] | RegExp | ScanListener[];
       if (key === "scan") {
-        value = isRegExp(value) ? parseRegexpFromString(value) : value
+        value = isRegExp(v) ? parseRegexpFromString(v) : v
       } else if (key === "ignore") {
-        value = value.split(",").map(s => /^\/.*\/$/.test(s) ? new RegExp(s.substr(1, s.length - 2)) : s)
+        value = v.split(",").map(s => /^\/.*\/$/.test(s) ? new RegExp(s.substr(1, s.length - 2)) : s)
       } else if (key === "require") {
-        value = value.split(",").map((path) => loadInterceptor(path))
+        v.split(",").map((path) => baseValue(params, key, [] as ScanListener[]).push(...loadListeners(path)))
       } else if (typeof(defaultValue) === "boolean") {
-        value = JSON.parse(value)
+        value = JSON.parse(v)
       } else if (typeof(defaultValue) === "number") {
-        value = parseInt(value)
+        value = parseInt(v)
       }
-      params[key] = value
+      if (value !== undefined) {
+        params[key] = value
+      }
     } else {
       urls.push(arg)
     }

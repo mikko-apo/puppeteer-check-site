@@ -73,7 +73,3 @@ export function launch(): TestServer {
   });
   return testServer
 }
-
-if (module) {
-  module.exports = {launch};
-}

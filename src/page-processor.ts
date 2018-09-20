@@ -1,7 +1,7 @@
 import {Headers, Page, PageEventObj, Request, Response} from "puppeteer";
 import {debug, info, pushUnique, removeFromArray} from "./util";
 import {URL} from "url";
-import {Crawler, ErrorInfo, PageReadyHandler, PageResult, RequiredInterceptor, State} from "./check-site";
+import {ErrorInfo, MatcherType, PageCheckReadyHandler, PageResult, ScanListener, State} from "./check-site";
 
 export class PageProcessor {
   page: Page;
@@ -23,7 +23,7 @@ export class PageProcessor {
     cleanResult(pageResult);
     return pageResult;
   }
-  
+
   private async processPage(url: string, pageResult: PageResult, state: State, listeners: Map<keyof PageEventObj, any>, openRequests: Request[], handleRequestTimeout: (arr: Request[], msDiff: number, resolve: () => void) => void): Promise<void> {
     const {params} = state;
     const page = this.page;
@@ -40,36 +40,48 @@ export class PageProcessor {
       await page.goto(url, {waitUntil: 'domcontentloaded', timeout: params.timeout});
       await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
       await scrollToEnd(page);
+      await scrollToTop(page);
       await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
-      await this.handleOnPageLoad(pageResult, state)
+      if (await this.handleOnPageLoad("onPageCheckReady", state, pageResult)) {
+        await waitUntilEmpty(openRequests, params.timeout, handleRequestTimeout);
+      }
     } finally {
       listeners.forEach((value, key) => page.removeListener(key, value));
     }
   }
 
-  private async handleOnPageLoad(pageResult: PageResult, state: State) {
-    const pageReadyHandlers: RequiredInterceptor[] = state.params.require.filter( r => r.onPageReady)
-    if(pageReadyHandlers.length > 0) {
-      await scrollToTop(this.page);
-      for(const handler of pageReadyHandlers) {
-        try {
-          await this.callHandler(handler.onPageReady, pageResult, state)
-        } catch (err) {
-          info(`- ${handler.path} threw an error`, err);
-          err.message = `${handler.path} threw an error: ${err.message}`
-          pageResult.errors.push(errorToObject(err));
-          break;
-        }
-      }
-    }
+  private getListeners(state: State, key: keyof ScanListener, url: string) {
+    return state.params.require.filter(listener => listener[key] && (!listener.urls || listener.urls.length === 0 || matchesAnyPartially(url, listener.urls)))
   }
 
-  private async callHandler(handler: PageReadyHandler, pageResult: PageResult, state: State) {
+  private async handleOnPageLoad(listenerKey: keyof ScanListener, state: State, pageResult: PageResult) {
+    const pageReadyHandlers: ScanListener[] = this.getListeners(state, listenerKey, this.page.url());
+    if (pageReadyHandlers.length == 0) {
+      return false;
+    }
+    for (const handler of pageReadyHandlers) {
+      try {
+        await this.callHandler(handler.onPageCheckReady, pageResult, state)
+      } catch (err) {
+        const parts: string[] = [handler.path, listenerKey]
+        if (handler.name) {
+          parts.push(handler.name)
+        }
+        const str = `${parts.join(":")} threw an error`
+        info(`- ${str}`, err);
+        err.message = `${str}: ${err.message}`;
+        pageResult.errors.push(errorToObject(err));
+      }
+    }
+    return true;
+  }
+
+  private async callHandler(handler: PageCheckReadyHandler, pageResult: PageResult, state: State) {
     const p = handler(this.page, pageResult, state);
-    if(p instanceof Promise) {
+    if (p instanceof Promise) {
       return p;
     }
-    return Promise.resolve(true)
+    return Promise.resolve(p)
   }
 }
 
@@ -92,11 +104,9 @@ function createPageResult(url: string, isInternal: boolean): PageResult {
 
 function createIsIgnored(state: State, pageResult: PageResult) {
   return (url: string) => {
-    for (const ignore of state.params.ignore || []) {
-      if (matches(ignore, url)) {
-        pushUnique(pageResult.ignored, url);
-        return true;
-      }
+    if (matchesAnyPartially(url, state.params.ignore || [])) {
+      pushUnique(pageResult.ignored, url);
+      return true;
     }
     return false;
   };
@@ -112,7 +122,6 @@ function createRequestTimeoutHandler(pageResult: PageResult) {
     resolve();
   }
 }
-
 
 function createListeners(pageResult: PageResult, openRequests: Request[], isIgnored: (url: string) => boolean) {
   const listeners = new Map<keyof PageEventObj, any>();
@@ -163,14 +172,18 @@ function createListeners(pageResult: PageResult, openRequests: Request[], isIgno
   return listeners;
 }
 
-function matches(pattern: ((s: string) => boolean | RegExp | string), string: string) {
-  if (typeof(pattern) === "function") {
-    return pattern(string)
+function matchesAnyPartially(string: string, patterns: MatcherType[]) {
+  for (const pattern of patterns) {
+    if (typeof(pattern) === "function" && pattern(string)) {
+      return true
+    }
+    if ((pattern instanceof (RegExp)) && (pattern as RegExp).test(string)) {
+      return true
+    } else if (string.includes(pattern as string)) {
+      return true;
+    }
   }
-  if ((pattern as RegExp) instanceof RegExp) {
-    return (pattern as RegExp).test(string)
-  }
-  return string.includes(pattern);
+  return false;
 }
 
 async function waitUntilEmpty(arr: Request[], timeoutMs: number, handleTimeout: (arr: Request[], msDiff: number, resolve: () => void, reject?: (err: any) => void) => void) {
@@ -254,22 +267,10 @@ function cleanResult(pageResult: PageResult) {
   if (pageResult.url === pageResult.originalUrl) {
     delete pageResult.originalUrl;
   }
-  if (pageResult.errors.length === 0) {
-    delete pageResult.errors;
-  }
-  if (pageResult.pageErrors.length === 0) {
-    delete pageResult.pageErrors;
-  }
-  if (pageResult.failed.length === 0) {
-    delete pageResult.failed;
-  }
-  if (pageResult.ignored.length === 0) {
-    delete pageResult.ignored;
-  }
-  if (pageResult.hrefs.length === 0) {
-    delete pageResult.hrefs;
-  }
-  if (pageResult.succeeded.length === 0) {
-    delete pageResult.succeeded;
+  for (const key of Object.keys(pageResult)) {
+    const e:any = pageResult[key];
+    if (Array.isArray(e) && e.length === 0) {
+      delete pageResult[key]
+    }
   }
 }
