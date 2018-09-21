@@ -1,3 +1,5 @@
+[![Build Status](https://api.travis-ci.com/mikko-apo/puppeteer-check-site.svg?branch=master)](https://travis-ci.com/mikko-apo/puppeteer-check-site)
+
 # check-site.ts
 
 Site checker that uses a real browser (Chrome with Puppeteer) to check your site for errors.
