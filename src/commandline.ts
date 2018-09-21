@@ -50,7 +50,7 @@ function baseValue<T>(map: any, key: string, base: T): T {
   return base;
 }
 
-export function parseParams(argv: string[], urls: string[]) {
+export function parseParams(argv: string[]) {
   const params: Parameters = {};
   for (const arg of argv) {
     if (arg.includes(":") && defaultParameters.hasOwnProperty(arg.split(":")[0])) {
@@ -75,18 +75,17 @@ export function parseParams(argv: string[], urls: string[]) {
         params[key] = value
       }
     } else {
-      urls.push(arg)
+      baseValue(params, "urls", [] as string[]).push(arg)
     }
   }
   return params;
 }
 
 export async function startCommandLine(argv: string[], createCrawlerF: (params: Parameters) => Crawler = createCrawler) {
-  const urls: string[] = [];
-  const params = parseParams(argv, urls);
-  if (urls.length > 0) {
+  const params = parseParams(argv);
+  if (params.urls.length > 0) {
     const crawler = createCrawlerF(params);
-    for (const url of urls) {
+    for (const url of params.urls) {
       await crawler.crawl(url)
     }
     if (params.report) {

@@ -53,6 +53,7 @@ export interface Parameters {
   scan?: keyof ScanOptions | RegExp
   require?: ScanListener[]
   config?: string
+  urls?: string[]
 }
 
 export type MatcherType = string | RegExp | ((s: string) => boolean)
@@ -291,7 +292,8 @@ export const defaultParameters: Parameters = {
   debug: false,
   timeout: 10000,
   require: [],
-  config: undefined
+  config: undefined,
+  urls:[]
 };
 
 export async function crawl(url: string, params = defaultParameters): Promise<PageResult[]> {

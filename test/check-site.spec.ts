@@ -365,7 +365,7 @@ describe('require', () => {
     app.siteData = {
       a: {}
     };
-    const params = parseParams([`require:${__dirname}/pageReadyTest.ts`], [app.makeUrl("a")]);
+    const params = parseParams([`require:${__dirname}/pageReadyTest.ts`]);
     const crawler = createCrawler(params);
     const res = await crawler.crawl(app.makeUrl("a"));
     eq(res, expectedResult)
@@ -380,7 +380,7 @@ describe('require', () => {
     app.siteData = {
       a: {}
     };
-    const params = parseParams([`require:${__dirname}/pageReadyTestAsync.ts`], [app.makeUrl("a")])
+    const params = parseParams([`require:${__dirname}/pageReadyTestAsync.ts`])
     const crawler = createCrawler(params);
     const res = await crawler.crawl(app.makeUrl("a"));
     eq(res, expectedResult)
@@ -390,14 +390,14 @@ describe('require', () => {
     app.siteData = {
       a: {}
     };
-    const params = parseParams([`require:${__dirname}/pageReadyTestError.ts`], [app.makeUrl("a")]);
+    const params = parseParams([`require:${__dirname}/pageReadyTestError.ts`]);
     const crawler = createCrawler(params);
     const res = await crawler.crawl(app.makeUrl("a"));
     eq(res[0].errors[0].message, `${__dirname}/pageReadyTestError.ts:onPageCheckReady threw an error: Evaluation failed: SyntaxError: Unexpected number`)
   })
 
   it('async function that works for pages that end with /a', async () => {
-    const params = parseParams([`require:${__dirname}/pageReadyA.ts`], [app.makeUrl("a")]);
+    const params = parseParams([`require:${__dirname}/pageReadyA.ts`]);
     const crawler = createCrawler(params);
     app.siteData = {
       a: {hrefs: "b"},
@@ -419,31 +419,23 @@ describe('require', () => {
 
 describe("Commandline parsing", () => {
   it('single host', () => {
-    const urls: string[] = [];
-    parseParams(["localhost"], urls);
-    eq(urls, ["localhost"])
+    eq(parseParams(["localhost"]).urls, ["localhost"])
   });
 
   it('single host debug', () => {
-    const urls: string[] = [];
-    const params = parseParams(["localhost", "debug:true"], urls);
-    eq(params, {"debug": true});
-    eq(urls, ["localhost"])
+    const params = parseParams(["localhost", "debug:true"]);
+    eq(params, {urls: ["localhost"], "debug": true});
   });
 
   it('two hosts ignore', () => {
-    const urls: string[] = [];
-    const params = parseParams(["localhost", "foo", "ignore:test,/pow:pow/"], urls);
-    eq(params, {"ignore": ["test", /pow:pow/]});
-    eq(urls, ["localhost", "foo"])
+    const params = parseParams(["localhost", "foo", "ignore:test,/pow:pow/"]);
+    eq(params, {urls: ["localhost", "foo"], "ignore": ["test", /pow:pow/]});
   });
   it('scan', () => {
-    const urls: string[] = [];
-    eq(parseParams(["scan:page"], urls), {"scan": "page"});
-    eq(parseParams(["scan:/pow/"], urls), {"scan": /pow/})
+    eq(parseParams(["scan:page"]), {"scan": "page"});
+    eq(parseParams(["scan:/pow/"]), {"scan": /pow/})
   })
   it('config', () => {
-    const urls: string[] = [];
-    eq(parseParams([`config:${__dirname}/testParams.json`], urls), {"pow": "POW"});
+    eq(parseParams([`config:${__dirname}/testParams.json`]), {"pow": "POW"});
   })
 });

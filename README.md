@@ -26,6 +26,7 @@ Features:
 * incorrect url is saved: https://www.reaktor.com/blog/youre-hired-in-other-words-how-to-get-a-job-at-reaktor/#finnishVersion
 * close tab and reopen tab after n operations
 * parallel operations: tabs & browsers
+* npm publish: https://medium.com/cameron-nokes/the-30-second-guide-to-publishing-a-typescript-package-to-npm-89d93ff7bccd
 * app packaging: https://github.com/nexe/nexe or https://github.com/zeit/pkg
 * site checker: https://www.npmjs.com/package/bs-broken-links-checker
 
@@ -46,4 +47,4 @@ Features:
         return await page.click('button')
       }
       
-* config - load json files as parameters. See (exampleParams.json)[exampleParams.json]
+* config - load json files as parameters. See [exampleParams.json](exampleParams.json)
