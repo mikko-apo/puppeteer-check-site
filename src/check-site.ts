@@ -52,6 +52,7 @@ export interface Parameters {
   resultJson?: string
   scan?: keyof ScanOptions | RegExp
   require?: ScanListener[]
+  config?: string
 }
 
 export type MatcherType = string | RegExp | ((s: string) => boolean)
@@ -289,7 +290,8 @@ export const defaultParameters: Parameters = {
   devtools: false,
   debug: false,
   timeout: 10000,
-  require: []
+  require: [],
+  config: undefined
 };
 
 export async function crawl(url: string, params = defaultParameters): Promise<PageResult[]> {

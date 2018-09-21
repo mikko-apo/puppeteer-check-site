@@ -8,7 +8,7 @@ import {
   ScanListener,
   ScanListenerDef
 } from "./check-site";
-import {info} from "./util";
+import {info, readFile} from "./util";
 
 function isRegExp(s: string) {
   return /^\/.*\/$/.test(s);
@@ -64,6 +64,8 @@ export function parseParams(argv: string[], urls: string[]) {
         value = v.split(",").map(s => /^\/.*\/$/.test(s) ? new RegExp(s.substr(1, s.length - 2)) : s)
       } else if (key === "require") {
         v.split(",").map((path) => baseValue(params, key, [] as ScanListener[]).push(...loadListeners(path)))
+      } else if (key === "config") {
+        v.split(",").forEach((path) => Object.assign(params, JSON.parse(readFile(path))))
       } else if (typeof(defaultValue) === "boolean") {
         value = JSON.parse(v)
       } else if (typeof(defaultValue) === "number") {

@@ -12,13 +12,13 @@ Features:
 * Checks the whole site or a segment or just a page or urls matching a regexp pattern 
 * Easy automation: headless browser + error exit code + report in console log => easy scripting for scheduled runs
 * Custom `onPageCheckReady()` javascript/typescript functions. Support custom operations like test logins or dynamic app use. The custom code has access to the page once it has been processed.
+* Configuration can be stored in json files
 
 # Upcoming features
 * Commandline report
 * Support redirects
 * headers
 * retries
-* config file
 * external links check
 * possible to (--require) custom javascript files:
   * onPageCheckReady should have: access to browser, href collection
@@ -31,7 +31,8 @@ Features:
 
 # Command line parameters
 
-* scan: [site|page|section|/regexp/]
+* scan - limit search to a specific part of the site. default: site
+  * [site|page|section|/regexp/]
   * `site`: same auth and host, http or https, any port, any path - (auth@)host
   * `page`: same auth, host, port and path - (auth@)host:port/path
   * `section`: page or any path below it: When root is http://localhost/a
@@ -44,3 +45,5 @@ Features:
       export async function onPageCheckReady(page: Page, pageResult: PageResult):Promise<void> {
         return await page.click('button')
       }
+      
+* config - load json files as parameters. See (exampleParams.json)[exampleParams.json]

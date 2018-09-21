@@ -442,4 +442,8 @@ describe("Commandline parsing", () => {
     eq(parseParams(["scan:page"], urls), {"scan": "page"});
     eq(parseParams(["scan:/pow/"], urls), {"scan": /pow/})
   })
+  it('config', () => {
+    const urls: string[] = [];
+    eq(parseParams([`config:${__dirname}/testParams.json`], urls), {"pow": "POW"});
+  })
 });
