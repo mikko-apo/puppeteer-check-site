@@ -171,7 +171,11 @@ export class Crawler {
 
   async crawl(root: string): Promise<PageResult[]> {
     if (!this.browser) {
-      this.browser = await launch(this.state.params as LaunchOptions);
+      let params = this.state.params as LaunchOptions;
+      if(process.env.NO_SANDBOX) {
+        params={...params, args: ['--no-sandbox']}
+      }
+      this.browser = await launch(params );
     }
     if (!this.page) {
       this.page = await this.browser.newPage();

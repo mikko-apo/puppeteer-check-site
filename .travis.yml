@@ -1,10 +1,9 @@
 language: node_js
 node_js:
-- 4
-- 5
-- 6
 - 8
 - 9
+env:
+- NO_SANDBOX=TRUE
 cache:
   directories:
   - "node_modules"
