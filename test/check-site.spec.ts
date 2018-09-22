@@ -288,6 +288,20 @@ describe('Referer', () => {
   })
 });
 
+it('ignoreExternals', async () => {
+  app.siteData = {
+    a: {
+      hrefs: "b"
+    }
+  };
+  const res = await crawl(app.makeUrl("a"), {ignoreExternals: true, scan: 'page'});
+  eq(res, [{
+    "url": app.makeUrl("a"),
+    "hrefs": [app.makeUrl("b")],
+    "succeeded": [app.makeUrl("a")]
+  }])
+})
+
 describe('scan', () => {
   it('site', () => {
     const state = new State(defaultParameters);
@@ -296,7 +310,7 @@ describe('scan', () => {
       "a",
       "a/b",
       "http://localhost:8080" // external
-    ], "http://localhost/c", true, "http://localhost/d");
+    ], "http://localhost/c", true, "http://localhost/d", new State(defaultParameters));
     eq(state.todo, [
       "http://localhost/a",
       "http://localhost/a/b"
@@ -310,7 +324,7 @@ describe('scan', () => {
       "?567",
       "#foo",
       "a",
-    ], "http://localhost/d?123", true, "http://localhost/d");
+    ], "http://localhost/d?123", true, "http://localhost/d", new State(defaultParameters));
     eq(state.todo, [
       "http://localhost/d?567",
       "http://localhost/d?123#foo"
@@ -326,7 +340,7 @@ describe('scan', () => {
       "http://localhost/a/b",
       "?123",
       "http://localhost/aB",
-    ], "http://localhost/a", true, "http://localhost/a");
+    ], "http://localhost/a", true, "http://localhost/a", new State(defaultParameters));
     eq(state.todo, [
       "http://localhost/a/b",
       "http://localhost/a?123"
@@ -343,7 +357,7 @@ describe('scan', () => {
       "?123",
       "?12a",
       "http://localhost/aB",
-    ], "http://localhost/a", true, "http://localhost/");
+    ], "http://localhost/a", true, "http://localhost/", new State(defaultParameters));
     eq(state.todo, [
       "http://localhost/a/a",
       "http://localhost/a?12a"
@@ -431,11 +445,17 @@ describe("Commandline parsing", () => {
     const params = parseParams(["localhost", "foo", "ignore:test,/pow:pow/"]);
     eq(params, {urls: ["localhost", "foo"], "ignore": ["test", /pow:pow/]});
   });
+
   it('scan', () => {
     eq(parseParams(["scan:page"]), {"scan": "page"});
     eq(parseParams(["scan:/pow/"]), {"scan": /pow/})
   })
+
   it('config', () => {
     eq(parseParams([`config:${__dirname}/testParams.json`]), {"pow": "POW"});
+  })
+
+  it('ignoreExternals', () => {
+    eq(parseParams(['ignoreExternals:true']), {ignoreExternals: true});
   })
 });

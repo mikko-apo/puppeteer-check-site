@@ -54,6 +54,7 @@ export interface Parameters {
   require?: ScanListener[]
   config?: string
   urls?: string[]
+  ignoreExternals?: boolean
 }
 
 export type MatcherType = string | RegExp | ((s: string) => boolean)
@@ -97,7 +98,7 @@ export class State {
     return protocolAllowed && hasNotBeenChecked && isAlreadyInTodo && !isAlreadyInExternalTodo && isNotEmpty;
   }
 
-  addHrefs(hrefs: string[], currentUrl: string, currentIsInternal: boolean, root: string) {
+  addHrefs(hrefs: string[], currentUrl: string, currentIsInternal: boolean, root: string, state: State) {
     const rootUrl = new URL(root);
 
     for (const href of hrefs) {
@@ -107,7 +108,7 @@ export class State {
         if (this.urlIsScanned(rootUrl, url)) {
           this.todo.push(urlString)
         } else {
-          if (currentIsInternal) {
+          if (currentIsInternal && !state.params.ignoreExternals) {
             this.todoExternal.push(urlString)
           }
         }
@@ -271,7 +272,7 @@ async function crawlUrls(state: State, page: Page, root: string) {
     state.results.push(pageResult);
     state.checked[url] = true;
     if (pageResult.hrefs) {
-      state.addHrefs(pageResult.hrefs, pageResult.url, isInternal, root)
+      state.addHrefs(pageResult.hrefs, pageResult.url, isInternal, root, state)
     }
     const issues = collectIssues([pageResult]);
     if (issues.length > 0) {
@@ -297,7 +298,8 @@ export const defaultParameters: Parameters = {
   timeout: 10000,
   require: [],
   config: undefined,
-  urls:[]
+  urls:[],
+  ignoreExternals: false
 };
 
 export async function crawl(url: string, params = defaultParameters): Promise<PageResult[]> {

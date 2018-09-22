@@ -21,7 +21,7 @@ Features:
 * Support redirects
 * headers
 * retries
-* external links check
+* clean up and document command line parsing
 * possible to (--require) custom javascript files:
   * onPageCheckReady should have: access to browser, href collection
   * intercept page parsing: onCrawl(crawl: (url: string, isInternal: boolean, state: State) => Promise<PageResult>)
