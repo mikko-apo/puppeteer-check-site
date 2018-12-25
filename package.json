@@ -8,7 +8,7 @@
   },
   "scripts": {
     "test": "npm run lint && npm run test-mocha",
-    "test-mocha": "mocha --require ts-node/register ./test/*.spec.ts",
+    "test-mocha": "mocha --require ts-node/register ./test/**/*.spec.ts",
     "build": "tsc -p .",
     "lint": "tslint --format verbose -c tslint.json 'src/**/*.ts'",
     "lint-fix": "tslint --fix --format verbose -c tslint.json 'src/**/*.ts'"
