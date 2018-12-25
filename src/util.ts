@@ -1,27 +1,28 @@
 import * as fs from "fs";
 
 export function writeTextFile(filepath: string, output: string) {
-  fs.writeFileSync(filepath, output)
+  fs.writeFileSync(filepath, output);
 }
 
 export function readFile(filepath: string) {
-  return fs.readFileSync(filepath, "utf8")
+  return fs.readFileSync(filepath, "utf8");
 }
 
 export function debug(...args: any[]) {
   if ((debug as any).debugOn) {
-    info(...args)
+    info(...args);
   }
 }
 
 (debug as any).debugOn = false;
 
 export function info(...args: any[]) {
+  // tslint:disable:no-console
   console.log(...args);
 }
 
 export function pretty(obj: any) {
-  return JSON.stringify(obj, null, 2)
+  return JSON.stringify(obj, null, 2);
 }
 
 export function removeFromArray(arr: any[], obj: any) {
@@ -30,10 +31,10 @@ export function removeFromArray(arr: any[], obj: any) {
 
 export function pushUnique(arr: any[], ...rest: any[]): boolean {
   let pushed = false;
-  for(const i of rest) {
-    if(!arr.includes(i)) {
+  for (const i of rest) {
+    if (!arr.includes(i)) {
       pushed = true;
-      arr.push(i)
+      arr.push(i);
     }
   }
   return pushed;

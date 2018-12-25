@@ -6,7 +6,7 @@ import {
   defaultParameters,
   Parameters,
   ScanListener,
-  ScanListenerDef
+  ScanListenerDef,
 } from "./check-site";
 import {info, readFile} from "./util";
 
@@ -24,19 +24,19 @@ function resolvePath(filePath: string) {
 
 function loadListeners(filePath: string): ScanListener[] {
   const listeners: ScanListener[] = [];
-  const listenerDef : ScanListenerDef = require(resolvePath(filePath));
-  if(listenerDef.onPageCheckReady) {
+  const listenerDef: ScanListenerDef = require(resolvePath(filePath));
+  if (listenerDef.onPageCheckReady) {
     listenerDef.path = filePath;
-    listeners.push(listenerDef)
+    listeners.push(listenerDef);
   }
-  if(listenerDef.listeners) {
+  if (listenerDef.listeners) {
     listenerDef.listeners.forEach((listener: ScanListener, i) => {
       listener.path = filePath;
-      if(!listener.name) {
-        listener.name = `${i}`
+      if (!listener.name) {
+        listener.name = `${i}`;
       }
-      listeners.push(listener)
-    })
+      listeners.push(listener);
+    });
   }
   listenerDef.path = filePath;
   return listeners;
@@ -57,47 +57,48 @@ export function parseParams(argv: string[]) {
       const [key, ...rest] = arg.split(":");
       const defaultValue = defaultParameters[key];
       const v = rest.join(":");
-      let value: string | number | (string | RegExp)[] | RegExp | ScanListener[];
+      let value: string | number | Array<string | RegExp> | RegExp | ScanListener[];
       if (key === "scan") {
-        value = isRegExp(v) ? parseRegexpFromString(v) : v
+        value = isRegExp(v) ? parseRegexpFromString(v) : v;
       } else if (key === "ignore") {
-        value = v.split(",").map(s => /^\/.*\/$/.test(s) ? new RegExp(s.substr(1, s.length - 2)) : s)
+        value = v.split(",").map((s) => /^\/.*\/$/.test(s) ? new RegExp(s.substr(1, s.length - 2)) : s);
       } else if (key === "require") {
-        v.split(",").map((path) => baseValue(params, key, [] as ScanListener[]).push(...loadListeners(path)))
+        v.split(",").map((s) => baseValue(params, key, [] as ScanListener[]).push(...loadListeners(s)));
       } else if (key === "config") {
-        v.split(",").forEach((path) => Object.assign(params, JSON.parse(readFile(path))))
-      } else if (typeof(defaultValue) === "boolean") {
-        value = JSON.parse(v)
-      } else if (typeof(defaultValue) === "number") {
-        value = parseInt(v)
+        v.split(",").forEach((s) => Object.assign(params, JSON.parse(readFile(s))));
+      } else if (typeof (defaultValue) === "boolean") {
+        value = JSON.parse(v);
+      } else if (typeof (defaultValue) === "number") {
+        value = parseInt(v, 10);
       }
       if (value !== undefined) {
-        params[key] = value
+        params[key] = value;
       }
     } else {
-      baseValue(params, "urls", [] as string[]).push(arg)
+      baseValue(params, "urls", [] as string[]).push(arg);
     }
   }
   return params;
 }
 
-export async function startCommandLine(argv: string[], createCrawlerF: (params: Parameters) => Crawler = createCrawler) {
+export async function startCommandLine(argv: string[],
+                                       createCrawlerF: (params: Parameters) => Crawler = createCrawler) {
   const params = parseParams(argv);
   if (params.urls.length > 0) {
     const crawler = createCrawlerF(params);
     for (const url of params.urls) {
-      await crawler.crawl(url)
+      await crawler.crawl(url);
     }
     if (params.report) {
-      info("wrote report to", params.report)
+      info("wrote report to", params.report);
     }
     if (params.resultJson) {
-      info("wrote results as json to", params.resultJson)
+      info("wrote results as json to", params.resultJson);
     }
     const issues = collectIssues(crawler.state.results);
     if (issues.length > 0) {
       info("Exiting with error...");
-      process.exit(1)
+      process.exit(1);
     }
   }
 }

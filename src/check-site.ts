@@ -1,141 +1,82 @@
-import {URL} from "url";
 import {Browser, launch, LaunchOptions, Page} from "puppeteer";
-import {debug, info, pretty, removeFromArray, writeTextFile} from "./util";
-import {createReportHtml, createReportText, createReportTextShort} from "./reporting";
+import {URL} from "url";
 import {errorToObject, PageProcessor} from "./page-processor";
+import {createReportHtml, createReportText, createReportTextShort} from "./reporting";
+import {debug, info, pretty, removeFromArray, writeTextFile} from "./util";
 
 export interface PageResult {
-  [index: string]: any
+  [index: string]: any;
 
-  url: string
-  external?: boolean
-  originalUrl?: string
-  errors?: ErrorInfo[]
-  pageErrors?: ErrorInfo[]
-  failed?: FailUrlStatus[]
-  ignored?: string[]
-  hrefs?: string[]
-  succeeded?: string[]
+  url: string;
+  external?: boolean;
+  originalUrl?: string;
+  errors?: ErrorInfo[];
+  pageErrors?: ErrorInfo[];
+  failed?: FailUrlStatus[];
+  ignored?: string[];
+  hrefs?: string[];
+  succeeded?: string[];
 }
 
 interface FailUrlStatus {
-  url: string
-  status?: number | string
-  errorText?: string
+  url: string;
+  status?: number | string;
+  errorText?: string;
 }
 
 export interface ErrorInfo {
-  message?: string
-  stack?: string
+  message?: string;
+  stack?: string;
 }
 
 export interface Issue {
-  failedUrl?: string
-  status?: number | string
-  error?: string
-  stack?: string
-  urls?: string[]
-  loadedBy?: FailUrlStatus[]
-  linkedBy?: string[]
+  failedUrl?: string;
+  status?: number | string;
+  error?: string;
+  stack?: string;
+  urls?: string[];
+  loadedBy?: FailUrlStatus[];
+  linkedBy?: string[];
 }
 
 interface ScanOptions {
-  "page": true,
-  "site": true,
-  "section": true
+  "page": true;
+  "site": true;
+  "section": true;
 }
 
 export interface Parameters {
-  [index: string]: any
+  [index: string]: any;
 
-  report?: string
-  resultJson?: string
-  scan?: keyof ScanOptions | RegExp
-  require?: ScanListener[]
-  config?: string
-  urls?: string[]
-  ignoreExternals?: boolean
+  report?: string;
+  resultJson?: string;
+  scan?: keyof ScanOptions | RegExp;
+  require?: ScanListener[];
+  config?: string;
+  urls?: string[];
+  ignoreExternals?: boolean;
 }
 
-export type MatcherType = string | RegExp | ((s: string) => boolean)
+export type MatcherType = string | RegExp | ((s: string) => boolean);
 
-export type PageAttachHandler = <T> (page: Page, state: State) => Promise<T>
-export type PageCheckReadyHandler = <T> (page: Page, pageResult: PageResult, state: State) => Promise<T>
-export type PageDetachHandler = <T> (page: Page, state: State) => Promise<T>
+export type PageAttachHandler = <T> (page: Page, state: State) => Promise<T>;
+export type PageCheckReadyHandler = <T> (page: Page, pageResult: PageResult, state: State) => Promise<T>;
+export type PageDetachHandler = <T> (page: Page, state: State) => Promise<T>;
 
 export interface ScanListener {
-  urls?: MatcherType[]
-  path?: string
-  name?: string
-  onPageAttach?: PageAttachHandler
-  onPageCheckReady?: PageCheckReadyHandler
-  onPageDetach?: PageDetachHandler
+  urls?: MatcherType[];
+  path?: string;
+  name?: string;
+  onPageAttach?: PageAttachHandler;
+  onPageCheckReady?: PageCheckReadyHandler;
+  onPageDetach?: PageDetachHandler;
 }
 
 export interface ScanListenerDef extends ScanListener {
-  listeners?: ScanListener[]
+  listeners?: ScanListener[];
 }
 
 export class State {
-  todo: string[] = [];
-  todoExternal: string[] = [];
-  referers: { [index: string]: string } = {};
-  results: PageResult[] = [];
-  checked: { [index: string]: boolean } = {};
-  processing: string[] = [];
-  params: Parameters;
-
-  constructor(params: Parameters) {
-    this.params = {...params};
-  }
-
-  private okToAddUrl(url: URL, urlString: string) {
-    const protocolAllowed = ["http:", "https:"].includes(url.protocol);
-    const hasNotBeenChecked = !this.checked.hasOwnProperty(urlString);
-    const isAlreadyInTodo = !this.todo.includes(urlString);
-    const isAlreadyInExternalTodo = this.todoExternal.includes(urlString);
-    const isNotEmpty = urlString.length > 0;
-    return protocolAllowed && hasNotBeenChecked && isAlreadyInTodo && !isAlreadyInExternalTodo && isNotEmpty;
-  }
-
-  addHrefs(hrefs: string[], currentUrl: string, currentIsInternal: boolean, root: string, state: State) {
-    const rootUrl = new URL(root);
-
-    for (const href of hrefs) {
-      const url = new URL(href, currentUrl);
-      const urlString = url.toString();
-      if (this.okToAddUrl(url, urlString)) {
-        if (this.urlIsScanned(rootUrl, url)) {
-          this.todo.push(urlString)
-        } else {
-          if (currentIsInternal && !state.params.ignoreExternals) {
-            this.todoExternal.push(urlString)
-          }
-        }
-        this.referers[urlString] = currentUrl
-      }
-    }
-  }
-
-  private urlIsScanned(rootUrl: URL, url: URL) {
-    switch (this.params.scan) {
-      case "site": {
-        return State.siteUrlAsString(rootUrl).valueOf() === State.siteUrlAsString(url).valueOf();
-      }
-      case "page": {
-        return State.pageUrlAsString(rootUrl).valueOf() === State.pageUrlAsString(url).valueOf();
-      }
-      case "section": {
-        const isSamePage = State.pageUrlAsString(rootUrl).valueOf() === State.pageUrlAsString(url).valueOf();
-        console.log(url.toString(), State.pathAsDir(url));
-        const isChild = url.toString().startsWith(State.pathAsDir(rootUrl));
-        return isSamePage || isChild;
-      }
-      default: {
-        return this.params.scan.test(url.toString());
-      }
-    }
-  }
 
   private static siteUrlAsString(url: URL) {
     const parts = [];
@@ -159,22 +100,80 @@ export class State {
     const s = url.toString();
     return s.endsWith("/") ? s : `${s}/`;
   }
+  public todo: string[] = [];
+  public todoExternal: string[] = [];
+  public referers: { [index: string]: string } = {};
+  public results: PageResult[] = [];
+  public checked: { [index: string]: boolean } = {};
+  public processing: string[] = [];
+  public params: Parameters;
+
+  constructor(params: Parameters) {
+    this.params = {...params};
+  }
+
+  public addHrefs(hrefs: string[], currentUrl: string, currentIsInternal: boolean, root: string, state: State) {
+    const rootUrl = new URL(root);
+
+    for (const href of hrefs) {
+      const url = new URL(href, currentUrl);
+      const urlString = url.toString();
+      if (this.okToAddUrl(url, urlString)) {
+        if (this.urlIsScanned(rootUrl, url)) {
+          this.todo.push(urlString);
+        } else {
+          if (currentIsInternal && !state.params.ignoreExternals) {
+            this.todoExternal.push(urlString);
+          }
+        }
+        this.referers[urlString] = currentUrl;
+      }
+    }
+  }
+
+  private okToAddUrl(url: URL, urlString: string) {
+    const protocolAllowed = ["http:", "https:"].includes(url.protocol);
+    const hasNotBeenChecked = !this.checked.hasOwnProperty(urlString);
+    const isAlreadyInTodo = !this.todo.includes(urlString);
+    const isAlreadyInExternalTodo = this.todoExternal.includes(urlString);
+    const isNotEmpty = urlString.length > 0;
+    return protocolAllowed && hasNotBeenChecked && isAlreadyInTodo && !isAlreadyInExternalTodo && isNotEmpty;
+  }
+
+  private urlIsScanned(rootUrl: URL, url: URL) {
+    switch (this.params.scan) {
+      case "site": {
+        return State.siteUrlAsString(rootUrl).valueOf() === State.siteUrlAsString(url).valueOf();
+      }
+      case "page": {
+        return State.pageUrlAsString(rootUrl).valueOf() === State.pageUrlAsString(url).valueOf();
+      }
+      case "section": {
+        const isSamePage = State.pageUrlAsString(rootUrl).valueOf() === State.pageUrlAsString(url).valueOf();
+        const isChild = url.toString().startsWith(State.pathAsDir(rootUrl));
+        return isSamePage || isChild;
+      }
+      default: {
+        return this.params.scan.test(url.toString());
+      }
+    }
+  }
 }
 
 export class Crawler {
-  browser: Browser;
-  page: Page;
-  state: State;
+  public browser: Browser;
+  public page: Page;
+  public state: State;
 
   constructor(state: State) {
     this.state = state;
   }
 
-  async crawl(root: string): Promise<PageResult[]> {
+  public async crawl(root: string): Promise<PageResult[]> {
     if (!this.browser) {
       let params = this.state.params as LaunchOptions;
-      if(process.env.NO_SANDBOX) {
-        params={...params, args: ['--no-sandbox']}
+      if (process.env.NO_SANDBOX) {
+        params = {...params, args: ["--no-sandbox"]};
       }
       this.browser = await launch(params );
     }
@@ -204,7 +203,7 @@ export function collectIssues(results: PageResult[]) {
     let issue = lookup[key];
     if (!issue) {
       lookup[key] = issue = base;
-      ret.push(issue)
+      ret.push(issue);
     }
     return issue;
   }
@@ -214,13 +213,13 @@ export function collectIssues(results: PageResult[]) {
       const failedUrl = failed.url;
       const issue = addIssue(failed.url, {failedUrl});
       if (pageResult.url === failedUrl) {
-        issue.status = failed.status
+        issue.status = failed.status;
       } else {
         let loadedBy = issue.loadedBy;
         if (!loadedBy) {
-          issue.loadedBy = loadedBy = []
+          issue.loadedBy = loadedBy = [];
         }
-        loadedBy.push({url: pageResult.url, status: failed.status})
+        loadedBy.push({url: pageResult.url, status: failed.status});
       }
     }
     const allErrors = [...(pageResult.errors || []), ...(pageResult.pageErrors || [])];
@@ -228,17 +227,17 @@ export function collectIssues(results: PageResult[]) {
       addIssue(error.message || error.stack, {
         error: error.message,
         stack: error.stack,
-        urls: []
-      }).urls.push(pageResult.url)
+        urls: [],
+      }).urls.push(pageResult.url);
     }
   }
   for (const pageResult of results) {
     for (const href of pageResult.hrefs || []) {
       if (lookup.hasOwnProperty(href)) {
         if (!lookup[href].linkedBy) {
-          lookup[href].linkedBy = []
+          lookup[href].linkedBy = [];
         }
-        lookup[href].linkedBy.push(pageResult.url)
+        lookup[href].linkedBy.push(pageResult.url);
       }
     }
   }
@@ -257,7 +256,7 @@ async function crawlUrls(state: State, page: Page, root: string) {
       "todo external", state.todoExternal.length,
       "unique issues", collectIssues(state.results).length);
     state.processing.push(url);
-    let pageResult: PageResult = undefined;
+    let pageResult: PageResult;
     try {
       const pageProcessor = new PageProcessor(page);
       pageResult = await pageProcessor.process(url, isInternal, state);
@@ -272,7 +271,7 @@ async function crawlUrls(state: State, page: Page, root: string) {
     state.results.push(pageResult);
     state.checked[url] = true;
     if (pageResult.hrefs) {
-      state.addHrefs(pageResult.hrefs, pageResult.url, isInternal, root, state)
+      state.addHrefs(pageResult.hrefs, pageResult.url, isInternal, root, state);
     }
     const issues = collectIssues([pageResult]);
     if (issues.length > 0) {
@@ -288,7 +287,7 @@ async function crawlUrls(state: State, page: Page, root: string) {
 }
 
 export const defaultParameters: Parameters = {
-  scan: 'site',
+  scan: "site",
   report: undefined,
   resultJson: undefined,
   ignore: [],
@@ -298,12 +297,12 @@ export const defaultParameters: Parameters = {
   timeout: 10000,
   require: [],
   config: undefined,
-  urls:[],
-  ignoreExternals: false
+  urls: [],
+  ignoreExternals: false,
 };
 
 export async function crawl(url: string, params = defaultParameters): Promise<PageResult[]> {
-  return createCrawler(params).crawl(url)
+  return createCrawler(params).crawl(url);
 }
 
 export function createCrawler(params = defaultParameters): Crawler {

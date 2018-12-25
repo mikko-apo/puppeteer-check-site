@@ -7,8 +7,11 @@
     "check-site": "check-site-bin.ts"
   },
   "scripts": {
-    "test": "mocha --require ts-node/register ./test/*.spec.ts",
-    "build": "tsc -p ."
+    "test": "npm run lint && npm run test-mocha",
+    "test-mocha": "mocha --require ts-node/register ./test/*.spec.ts",
+    "build": "tsc -p .",
+    "lint": "tslint --format verbose -c tslint.json 'src/**/*.ts'",
+    "lint-fix": "tslint --fix --format verbose -c tslint.json 'src/**/*.ts'"
   },
   "repository": {
     "type": "git",
@@ -35,6 +38,7 @@
     "express": "^4.16.4",
     "mocha": "^5.2.0",
     "ts-node": "^7.0.1",
+    "tslint": "^5.12.0",
     "typescript": "^3.2.2"
   },
   "dependencies": {
