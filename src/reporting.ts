@@ -76,7 +76,7 @@ export function createReportTextShort(results: PageResult[]) {
   const ret = [];
   const issues = collectIssues(results);
   for (const issue of issues) {
-    const firstLine: Array<string | number> = ["-"];
+    const firstLine: (string | number)[] = ["-"];
     if (issue.status) {
       firstLine.push(issue.status);
     }

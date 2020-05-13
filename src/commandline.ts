@@ -57,7 +57,7 @@ export function parseParams(argv: string[]) {
       const [key, ...rest] = arg.split(":");
       const defaultValue = defaultParameters[key];
       const v = rest.join(":");
-      let value: string | number | Array<string | RegExp> | RegExp | ScanListener[];
+      let value: string | number | (string | RegExp)[] | RegExp | ScanListener[];
       if (key === "scan") {
         value = isRegExp(v) ? parseRegexpFromString(v) : v;
       } else if (key === "ignore") {
