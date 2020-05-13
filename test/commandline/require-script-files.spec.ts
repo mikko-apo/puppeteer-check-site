@@ -40,7 +40,7 @@ describe('require', () => {
     const params = parseParams([`require:${__dirname}/require-scripts/pageReadyTestError.ts`]);
     const crawler = createCrawler(params);
     const res = await crawler.crawl(app.makeUrl("a"));
-    eq(res[0].errors[0].message, `${__dirname}/require-scripts/pageReadyTestError.ts:onPageCheckReady threw an error: Evaluation failed: SyntaxError: Unexpected number`)
+    eq(res[0].errors[0].message, `${__dirname}/require-scripts/pageReadyTestError.ts:onPageCheckReady threw an error: Evaluation failed: POW!`)
   });
 
   it('async function that works for pages that end with /a', async () => {
