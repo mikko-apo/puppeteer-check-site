@@ -1,5 +1,5 @@
 import {Page} from "puppeteer";
-import {PageResult} from "../../../src/check-site";
+import { PageResult } from '../../../src/page-result'
 
 export const urls: string[] = ['/a']
 export async function onPageCheckReady(page: Page, pageResult: PageResult):Promise<void> {

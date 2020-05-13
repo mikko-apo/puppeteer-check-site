@@ -1,167 +1,167 @@
 <!doctype html>
 <head>
-    <style>
-        tr {
-            vertical-align: top;
-        }
-    </style>
+  <style>
+    tr {
+      vertical-align: top;
+    }
+  </style>
 </head>
 <html>
 <body>
 {{#if issues}}
 <h1>Issues: {{issues.length}}</h1>
 <table>
-    <tr>
-        <th>Issue</th>
-        <th>Info</th>
-    </tr>
-    {{#each issues}}
-    <tr>
-        <td>
-            {{#if failedUrl}}
-            {{link failedUrl}}
-            {{#if status}}
-            status: {{status}}
-            {{/if}}
-            {{/if}}
-            {{#if error}}
-            {{error}}
-            {{/if}}
-        </td>
-        <td>
-            {{#if stack}}
-            Error stack:
-            <pre>{{stack}}</pre>
-            {{/if}}
-            {{#if urls}}
-            <b>Pages</b>
-            <ul>
-                {{#each urls}}
-                <li>{{link .}}</li>
-                {{/each}}
-            </ul>
-            {{/if}}
-            {{#if loadedBy}}
-            <ul>
-                {{#each loadedBy}}
-                <li>{{link url}}, fail status: {{status}}</li>
-                {{/each}}
-            </ul>
-            {{/if}}
-            {{#if linkedBy}}
-            <b>Linked by</b>
-            <ul>
-                {{#each linkedBy}}
-                <li>{{link .}}</li>
-                {{/each}}
-            </ul>
-            {{/if}}
-        </td>
-    </tr>
-    {{/each}}
+  <tr>
+    <th>Issue</th>
+    <th>Info</th>
+  </tr>
+  {{#each issues}}
+  <tr>
+    <td>
+      {{#if failedUrl}}
+      {{link failedUrl}}
+      {{#if status}}
+      status: {{status}}
+      {{/if}}
+      {{/if}}
+      {{#if error}}
+      {{error}}
+      {{/if}}
+    </td>
+    <td>
+      {{#if stack}}
+      Error stack:
+      <pre>{{stack}}</pre>
+      {{/if}}
+      {{#if urls}}
+      <b>Pages</b>
+      <ul>
+        {{#each urls}}
+        <li>{{link .}}</li>
+        {{/each}}
+      </ul>
+      {{/if}}
+      {{#if loadedBy}}
+      <ul>
+        {{#each loadedBy}}
+        <li>{{link url}}, fail status: {{status}}</li>
+        {{/each}}
+      </ul>
+      {{/if}}
+      {{#if linkedBy}}
+      <b>Linked by</b>
+      <ul>
+        {{#each linkedBy}}
+        <li>{{link .}}</li>
+        {{/each}}
+      </ul>
+      {{/if}}
+    </td>
+  </tr>
+  {{/each}}
 </table>
 {{/if}}
 {{#if results}}
 <h1>Info</h1>
 Checked {{results.length}} pages
 <table>
-    {{#each results}}
-    <tr>
-        <td>
-            {{link url}}
-            {{#if originalUrl}}
-            redirected from {{link originalUrl}}
-            {{/if}}
-        </td>
-        <td>
-            {{#if errors}}
-            Errors {{errors.length}}:
-            <ul>
-                {{#each errors}}
-                <li>
-                    {{#if message}}
-                    Message:
-                    <pre>{{message}}</pre>
-                    {{/if}}
-                    {{#if stack}}
-                    Stack:
-                    <pre>{{stack}}</pre>
-                    {{/if}}
-                </li>
-                {{/each}}
-            </ul>
-            {{/if}}
+  {{#each results}}
+  <tr>
+    <td>
+      {{link url}}
+      {{#if originalUrl}}
+      redirected from {{link originalUrl}}
+      {{/if}}
+    </td>
+    <td>
+      {{#if errors}}
+      Errors {{errors.length}}:
+      <ul>
+        {{#each errors}}
+        <li>
+          {{#if message}}
+          Message:
+          <pre>{{message}}</pre>
+          {{/if}}
+          {{#if stack}}
+          Stack:
+          <pre>{{stack}}</pre>
+          {{/if}}
+        </li>
+        {{/each}}
+      </ul>
+      {{/if}}
 
-            {{#if pageErrors}}
-            Page errors {{pageErrors.length}}:
-            <ul>
-                {{#each pageErrors}}
-                <li>
-                    {{#if message}}
-                    Message:
-                    <pre>{{message}}</pre>
-                    {{/if}}
-                    {{#if stack}}
-                    Stack:
-                    <pre>{{stack}}</pre>
-                    {{/if}}
-                </li>
-                {{/each}}
-            </ul>
-            {{/if}}
+      {{#if pageErrors}}
+      Page errors {{pageErrors.length}}:
+      <ul>
+        {{#each pageErrors}}
+        <li>
+          {{#if message}}
+          Message:
+          <pre>{{message}}</pre>
+          {{/if}}
+          {{#if stack}}
+          Stack:
+          <pre>{{stack}}</pre>
+          {{/if}}
+        </li>
+        {{/each}}
+      </ul>
+      {{/if}}
 
-            {{#if failed}}
-            Failed resources {{failed.length}}:
-            <ul>
-                {{#each failed}}
-                <li>
-                    {{link url}}
-                    {{#if status}}
-                    status: {{status}}
-                    {{/if}}
-                    {{#if errorText}}
-                    error: {{errorText}}
-                    {{/if}}
-                </li>
-                {{/each}}
-            </ul>
-            {{/if}}
+      {{#if failed}}
+      Failed resources {{failed.length}}:
+      <ul>
+        {{#each failed}}
+        <li>
+          {{link url}}
+          {{#if status}}
+          status: {{status}}
+          {{/if}}
+          {{#if errorText}}
+          error: {{errorText}}
+          {{/if}}
+        </li>
+        {{/each}}
+      </ul>
+      {{/if}}
 
-            {{#if ignored}}
-            Ignored resource and links {{ignored.length}}:
-            <ul>
-                {{#each ignored}}
-                <li>
-                    {{link .}}
-                </li>
-                {{/each}}
-            </ul>
-            {{/if}}
+      {{#if ignored}}
+      Ignored resource and links {{ignored.length}}:
+      <ul>
+        {{#each ignored}}
+        <li>
+          {{link .}}
+        </li>
+        {{/each}}
+      </ul>
+      {{/if}}
 
-            {{#if hrefs}}
-            Links {{hrefs.length}}:
-            <ul>
-                {{#each hrefs}}
-                <li>
-                    {{link .}}
-                </li>
-                {{/each}}
-            </ul>
-            {{/if}}
+      {{#if hrefs}}
+      Links {{hrefs.length}}:
+      <ul>
+        {{#each hrefs}}
+        <li>
+          {{link .}}
+        </li>
+        {{/each}}
+      </ul>
+      {{/if}}
 
-            {{#if succeeded}}
-            Loaded resources {{succeeded.length}}:
-            <ul>
-                {{#each succeeded}}
-                <li>
-                    {{link .}}
-                </li>
-                {{/each}}
-            </ul>
-            {{/if}}
-        </td>
-    </tr>
-    {{/each}}
+      {{#if succeeded}}
+      Loaded resources {{succeeded.length}}:
+      <ul>
+        {{#each succeeded}}
+        <li>
+          {{link .}}
+        </li>
+        {{/each}}
+      </ul>
+      {{/if}}
+    </td>
+  </tr>
+  {{/each}}
 </table>
 {{/if}}
 </body>

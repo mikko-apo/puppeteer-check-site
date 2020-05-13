@@ -1,15 +1,14 @@
 import { Page } from 'puppeteer'
-import { PageResult, State } from './check-site'
+import { PageResult } from './page-result'
+import { CrawlerState } from './crawler/crawler-state'
 
 interface ScanOptions {
-  "page": true;
-  "site": true;
-  "section": true;
+  'page': true;
+  'site': true;
+  'section': true;
 }
 
 export interface Parameters {
-  [index: string]: any;
-
   report?: string;
   resultJson?: string;
   scan?: keyof ScanOptions | RegExp;
@@ -17,10 +16,12 @@ export interface Parameters {
   config?: string;
   urls?: string[];
   ignoreExternals?: boolean;
+
+  [index: string]: any;
 }
 
 export const defaultParameters: Parameters = {
-  scan: "site",
+  scan: 'site',
   report: undefined,
   resultJson: undefined,
   ignore: [],
@@ -32,14 +33,14 @@ export const defaultParameters: Parameters = {
   config: undefined,
   urls: [],
   ignoreExternals: false,
-};
+}
 
 
 export type MatcherType = string | RegExp | ((s: string) => boolean);
 
-export type PageAttachHandler = <T> (page: Page, state: State) => Promise<T>;
-export type PageCheckReadyHandler = <T> (page: Page, pageResult: PageResult, state: State) => Promise<T>;
-export type PageDetachHandler = <T> (page: Page, state: State) => Promise<T>;
+export type PageAttachHandler = <T> (page: Page, state: CrawlerState) => Promise<T>;
+export type PageCheckReadyHandler = <T> (page: Page, pageResult: PageResult, state: CrawlerState) => Promise<T>;
+export type PageDetachHandler = <T> (page: Page, state: CrawlerState) => Promise<T>;
 
 export interface ScanListener {
   urls?: MatcherType[];

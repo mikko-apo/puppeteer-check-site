@@ -1,34 +1,8 @@
-import {Browser, launch, LaunchOptions, Page} from "puppeteer";
-import {URL} from "url";
-import {errorToObject, PageProcessor} from "./page-processor";
-import {createReportHtml, createReportText, createReportTextShort} from "./reporting";
-import {debug, info, pretty, removeFromArray, writeTextFile} from "./util";
-import { defaultParameters, Parameters } from './parameters'
-
-export interface PageResult {
-  [index: string]: any;
-
-  url: string;
-  external?: boolean;
-  originalUrl?: string;
-  errors?: ErrorInfo[];
-  pageErrors?: ErrorInfo[];
-  failed?: FailUrlStatus[];
-  ignored?: string[];
-  hrefs?: string[];
-  succeeded?: string[];
-}
-
-interface FailUrlStatus {
-  url: string;
-  status?: number | string;
-  errorText?: string;
-}
-
-export interface ErrorInfo {
-  message?: string;
-  stack?: string;
-}
+import { debug } from './util'
+import { defaultParameters } from './parameters'
+import { FailUrlStatus, PageResult } from './page-result'
+import { Crawler } from './crawler/crawler'
+import { CrawlerState } from './crawler/crawler-state'
 
 export interface Issue {
   failedUrl?: string;
@@ -40,224 +14,64 @@ export interface Issue {
   linkedBy?: string[];
 }
 
-export class State {
-
-  private static siteUrlAsString(url: URL) {
-    const parts = [];
-    if ((url as any).auth) {
-      parts.push((url as any).auth, "@");
-    }
-    parts.push(url.host);
-    return parts.join("");
-  }
-
-  private static pageUrlAsString(url: URL) {
-    const parts = [];
-    if ((url as any).auth) {
-      parts.push((url as any).auth, "@");
-    }
-    parts.push(url.host, ":", url.port, url.pathname);
-    return parts.join();
-  }
-
-  private static pathAsDir(url: URL) {
-    const s = url.toString();
-    return s.endsWith("/") ? s : `${s}/`;
-  }
-  public todo: string[] = [];
-  public todoExternal: string[] = [];
-  public referers: { [index: string]: string } = {};
-  public results: PageResult[] = [];
-  public checked: { [index: string]: boolean } = {};
-  public processing: string[] = [];
-  public params: Parameters;
-
-  constructor(params: Parameters) {
-    this.params = {...params};
-  }
-
-  public addHrefs(hrefs: string[], currentUrl: string, currentIsInternal: boolean, root: string, state: State) {
-    const rootUrl = new URL(root);
-
-    for (const href of hrefs) {
-      const url = new URL(href, currentUrl);
-      const urlString = url.toString();
-      if (this.okToAddUrl(url, urlString)) {
-        if (this.urlIsScanned(rootUrl, url)) {
-          this.todo.push(urlString);
-        } else {
-          if (currentIsInternal && !state.params.ignoreExternals) {
-            this.todoExternal.push(urlString);
-          }
-        }
-        this.referers[urlString] = currentUrl;
-      }
-    }
-  }
-
-  private okToAddUrl(url: URL, urlString: string) {
-    const protocolAllowed = ["http:", "https:"].includes(url.protocol);
-    const hasNotBeenChecked = !this.checked.hasOwnProperty(urlString);
-    const isAlreadyInTodo = !this.todo.includes(urlString);
-    const isAlreadyInExternalTodo = this.todoExternal.includes(urlString);
-    const isNotEmpty = urlString.length > 0;
-    return protocolAllowed && hasNotBeenChecked && isAlreadyInTodo && !isAlreadyInExternalTodo && isNotEmpty;
-  }
-
-  private urlIsScanned(rootUrl: URL, url: URL) {
-    switch (this.params.scan) {
-      case "site": {
-        return State.siteUrlAsString(rootUrl).valueOf() === State.siteUrlAsString(url).valueOf();
-      }
-      case "page": {
-        return State.pageUrlAsString(rootUrl).valueOf() === State.pageUrlAsString(url).valueOf();
-      }
-      case "section": {
-        const isSamePage = State.pageUrlAsString(rootUrl).valueOf() === State.pageUrlAsString(url).valueOf();
-        const isChild = url.toString().startsWith(State.pathAsDir(rootUrl));
-        return isSamePage || isChild;
-      }
-      default: {
-        return this.params.scan.test(url.toString());
-      }
-    }
-  }
-}
-
-export class Crawler {
-  public browser: Browser;
-  public page: Page;
-  public state: State;
-
-  constructor(state: State) {
-    this.state = state;
-  }
-
-  public async crawl(root: string): Promise<PageResult[]> {
-    if (!this.browser) {
-      let params = this.state.params as LaunchOptions;
-      if (process.env.NO_SANDBOX) {
-        params = {...params, args: ["--no-sandbox"]};
-      }
-      this.browser = await launch(params );
-    }
-    if (!this.page) {
-      this.page = await this.browser.newPage();
-    }
-
-    this.state.todo.push(root);
-    try {
-      await crawlUrls(this.state, this.page, root);
-      const issues = collectIssues(this.state.results);
-      info("checked", Object.keys(this.state.checked).length, "unique errors", issues.length);
-      info(createReportText(this.state.results));
-      info("results", pretty(this.state.results));
-      return this.state.results;
-    } finally {
-      await this.browser.close();
-    }
-  }
-}
-
 export function collectIssues(results: PageResult[]) {
-  const lookup: { [index: string]: Issue } = {};
-  const ret: Issue[] = [];
+  const lookup: { [index: string]: Issue } = {}
+  const ret: Issue[] = []
 
   function addIssue(key: string, base: Issue): Issue {
-    let issue = lookup[key];
+    let issue = lookup[key]
     if (!issue) {
-      lookup[key] = issue = base;
-      ret.push(issue);
+      lookup[key] = issue = base
+      ret.push(issue)
     }
-    return issue;
+    return issue
   }
 
   for (const pageResult of results) {
     for (const failed of pageResult.failed || []) {
-      const failedUrl = failed.url;
-      const issue = addIssue(failed.url, {failedUrl});
+      const failedUrl = failed.url
+      const issue = addIssue(failed.url, {failedUrl})
       if (pageResult.url === failedUrl) {
-        issue.status = failed.status;
+        issue.status = failed.status
       } else {
-        let loadedBy = issue.loadedBy;
+        let loadedBy = issue.loadedBy
         if (!loadedBy) {
-          issue.loadedBy = loadedBy = [];
+          issue.loadedBy = loadedBy = []
         }
-        loadedBy.push({url: pageResult.url, status: failed.status});
+        loadedBy.push({url: pageResult.url, status: failed.status})
       }
     }
-    const allErrors = [...(pageResult.errors || []), ...(pageResult.pageErrors || [])];
+    const allErrors = [...(pageResult.errors || []), ...(pageResult.pageErrors || [])]
     for (const error of allErrors) {
       addIssue(error.message || error.stack, {
         error: error.message,
         stack: error.stack,
         urls: [],
-      }).urls.push(pageResult.url);
+      }).urls.push(pageResult.url)
     }
   }
   for (const pageResult of results) {
     for (const href of pageResult.hrefs || []) {
       if (lookup.hasOwnProperty(href)) {
         if (!lookup[href].linkedBy) {
-          lookup[href].linkedBy = [];
+          lookup[href].linkedBy = []
         }
-        lookup[href].linkedBy.push(pageResult.url);
+        lookup[href].linkedBy.push(pageResult.url)
       }
     }
   }
 
-  return ret;
-}
-
-async function crawlUrls(state: State, page: Page, root: string) {
-  do {
-    const isInternal = state.todo.length > 0;
-    const url = isInternal ? state.todo.shift() : state.todoExternal.shift();
-    info("check", url,
-      "internal", isInternal,
-      "checked", Object.keys(state.checked).length,
-      "todo", state.todo.length,
-      "todo external", state.todoExternal.length,
-      "unique issues", collectIssues(state.results).length);
-    state.processing.push(url);
-    let pageResult: PageResult;
-    try {
-      const pageProcessor = new PageProcessor(page);
-      pageResult = await pageProcessor.process(url, isInternal, state);
-    } catch (e) {
-      if (e.name === "TimeoutError") {
-        pageResult = {url, failed: [{status: "timeout", url}]};
-      } else {
-        pageResult = {url, errors: [errorToObject(e)]};
-      }
-    }
-    removeFromArray(state.processing, url);
-    state.results.push(pageResult);
-    state.checked[url] = true;
-    if (pageResult.hrefs) {
-      state.addHrefs(pageResult.hrefs, pageResult.url, isInternal, root, state);
-    }
-    const issues = collectIssues([pageResult]);
-    if (issues.length > 0) {
-      info(createReportTextShort([pageResult]));
-    }
-    if (state.params.report) {
-      writeTextFile(state.params.report, createReportHtml(state));
-    }
-    if (state.params.resultJson) {
-      writeTextFile(state.params.resultJson, JSON.stringify(state.results));
-    }
-  } while (state.todo.length !== 0 || state.todoExternal.length !== 0);
+  return ret
 }
 
 export async function crawl(url: string, params = defaultParameters): Promise<PageResult[]> {
-  return createCrawler(params).crawl(url);
+  return createCrawler(params).crawl(url)
 }
 
 export function createCrawler(params = defaultParameters): Crawler {
   if (params.debug) {
-    (debug as any).debugOn = true;
+    (debug as any).debugOn = true
   }
-  const state = new State({...defaultParameters, ...params});
-  return new Crawler(state);
+  const state = new CrawlerState({...defaultParameters, ...params})
+  return new Crawler(state)
 }
