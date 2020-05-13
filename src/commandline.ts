@@ -2,13 +2,10 @@ import * as path from "path";
 import {
   collectIssues,
   Crawler,
-  createCrawler,
-  defaultParameters,
-  Parameters,
-  ScanListener,
-  ScanListenerDef,
+  createCrawler
 } from "./check-site";
 import {info, readFile} from "./util";
+import { defaultParameters, Parameters, ScanListener } from './parameters'
 
 function isRegExp(s: string) {
   return /^\/.*\/$/.test(s);
@@ -22,6 +19,9 @@ function resolvePath(filePath: string) {
   return filePath.startsWith("/") ? filePath : path.join(process.cwd(), filePath);
 }
 
+export interface ScanListenerDef extends ScanListener {
+  listeners?: ScanListener[];
+}
 function loadListeners(filePath: string): ScanListener[] {
   const listeners: ScanListener[] = [];
   const listenerDef: ScanListenerDef = require(resolvePath(filePath));

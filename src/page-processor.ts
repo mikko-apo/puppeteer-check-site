@@ -1,7 +1,8 @@
 import {Headers, Page, PageEventObj, Request, Response} from "puppeteer";
 import {URL} from "url";
-import {ErrorInfo, MatcherType, PageCheckReadyHandler, PageResult, ScanListener, State} from "./check-site";
+import {ErrorInfo, PageResult, State} from "./check-site";
 import {debug, info, pushUnique, removeFromArray} from "./util";
+import { MatcherType, PageCheckReadyHandler, ScanListener } from './parameters'
 
 export class PageProcessor {
   public page: Page;

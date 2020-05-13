@@ -3,6 +3,7 @@ import {URL} from "url";
 import {errorToObject, PageProcessor} from "./page-processor";
 import {createReportHtml, createReportText, createReportTextShort} from "./reporting";
 import {debug, info, pretty, removeFromArray, writeTextFile} from "./util";
+import { defaultParameters, Parameters } from './parameters'
 
 export interface PageResult {
   [index: string]: any;
@@ -37,43 +38,6 @@ export interface Issue {
   urls?: string[];
   loadedBy?: FailUrlStatus[];
   linkedBy?: string[];
-}
-
-interface ScanOptions {
-  "page": true;
-  "site": true;
-  "section": true;
-}
-
-export interface Parameters {
-  [index: string]: any;
-
-  report?: string;
-  resultJson?: string;
-  scan?: keyof ScanOptions | RegExp;
-  require?: ScanListener[];
-  config?: string;
-  urls?: string[];
-  ignoreExternals?: boolean;
-}
-
-export type MatcherType = string | RegExp | ((s: string) => boolean);
-
-export type PageAttachHandler = <T> (page: Page, state: State) => Promise<T>;
-export type PageCheckReadyHandler = <T> (page: Page, pageResult: PageResult, state: State) => Promise<T>;
-export type PageDetachHandler = <T> (page: Page, state: State) => Promise<T>;
-
-export interface ScanListener {
-  urls?: MatcherType[];
-  path?: string;
-  name?: string;
-  onPageAttach?: PageAttachHandler;
-  onPageCheckReady?: PageCheckReadyHandler;
-  onPageDetach?: PageDetachHandler;
-}
-
-export interface ScanListenerDef extends ScanListener {
-  listeners?: ScanListener[];
 }
 
 export class State {
@@ -285,21 +249,6 @@ async function crawlUrls(state: State, page: Page, root: string) {
     }
   } while (state.todo.length !== 0 || state.todoExternal.length !== 0);
 }
-
-export const defaultParameters: Parameters = {
-  scan: "site",
-  report: undefined,
-  resultJson: undefined,
-  ignore: [],
-  headless: true,
-  devtools: false,
-  debug: false,
-  timeout: 10000,
-  require: [],
-  config: undefined,
-  urls: [],
-  ignoreExternals: false,
-};
 
 export async function crawl(url: string, params = defaultParameters): Promise<PageResult[]> {
   return createCrawler(params).crawl(url);

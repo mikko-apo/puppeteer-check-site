@@ -1,8 +1,4 @@
 import {launch} from "./testApp";
-import {deepStrictEqual} from "assert";
-import {crawl, createCrawler, defaultParameters, State} from "../src/check-site";
-import {createReportHtml} from "../src/reporting";
-import {parseParams} from "../src/commandline";
 
 export const app = launch();
 export const app2 = launch();

@@ -1,5 +1,6 @@
-import {defaultParameters, State} from "../../src/check-site";
+import {State} from "../../src/check-site";
 import {eq} from "../test-util";
+import { defaultParameters } from '../../src/parameters'
 
 describe('scan', () => {
   it('site', () => {
