@@ -1,10 +1,11 @@
 import { Browser, launch, LaunchOptions, Page } from 'puppeteer'
 import { PageResult } from '../page-result'
 import { info, pretty, removeFromArray, writeTextFile } from '../util'
-import { createReportHtml, createReportText, createReportTextShort } from '../reporting'
+import { createReportHtml} from '../reports/handlebarsReport'
 import { errorToObject, PageProcessor } from './page-processor'
 import { collectIssues } from '../check-site'
 import { CrawlerState } from './crawler-state'
+import { createReportText, createReportTextShort } from '../reports/textReport'
 
 export class Crawler {
   public browser: Browser

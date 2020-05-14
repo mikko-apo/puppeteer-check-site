@@ -1,5 +1,5 @@
 import { debug } from './util'
-import { defaultParameters } from './parameters'
+import { defaultParameters, Parameters } from './parameters'
 import { FailUrlStatus, PageResult } from './page-result'
 import { Crawler } from './crawler/crawler'
 import { CrawlerState } from './crawler/crawler-state'

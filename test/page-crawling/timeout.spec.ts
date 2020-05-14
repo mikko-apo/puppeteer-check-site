@@ -1,5 +1,5 @@
 import {createCrawler} from "../../src/check-site";
-import {createReportHtml} from "../../src/reporting";
+import {createReportHtml} from "../../src/reports/handlebarsReport";
 import {app, containsInOrder, eq} from "../test-util";
 
 describe('Crawl timeout', () => {

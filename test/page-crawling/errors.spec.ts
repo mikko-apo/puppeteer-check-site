@@ -1,5 +1,5 @@
 import {createCrawler} from "../../src/check-site";
-import {createReportHtml} from "../../src/reporting";
+import {createReportHtml} from "../../src/reports/handlebarsReport";
 import {containsInOrder, eq} from "../test-util";
 
 describe('Catch error for non-existing page', () => {

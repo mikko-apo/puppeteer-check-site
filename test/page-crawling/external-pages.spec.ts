@@ -1,6 +1,6 @@
 import {createCrawler} from "../../src/check-site";
 import {deepStrictEqual} from "assert";
-import {createReportHtml} from "../../src/reporting";
+import {createReportHtml} from "../../src/reports/handlebarsReport";
 import {app, app2, app3, containsInOrder} from "../test-util";
 
 describe("External pages", () => {

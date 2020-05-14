@@ -1,7 +1,7 @@
 import {deepStrictEqual} from "assert";
 import {createCrawler} from "../../src/check-site";
 import {app, containsInOrder} from "../test-util";
-import {createReportHtml} from "../../src/reporting";
+import {createReportHtml} from "../../src/reports/handlebarsReport";
 
 describe('Should crawl linked pages', () => {
   const pages = {
