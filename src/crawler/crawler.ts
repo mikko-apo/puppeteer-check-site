@@ -46,12 +46,7 @@ async function crawlUrls(state: CrawlerState, page: Page, root: string) {
   do {
     const isInternal = state.todo.length > 0
     const url = isInternal ? state.todo.shift() : state.todoExternal.shift()
-    info('check', url,
-      'internal', isInternal,
-      'checked', Object.keys(state.checked).length,
-      'todo', state.todo.length,
-      'todo external', state.todoExternal.length,
-      'unique issues', collectIssues(state.results).length)
+    info('checking url', url, 'internal', isInternal)
     state.processing.push(url)
     let pageResult: PageResult
     try {
@@ -70,8 +65,16 @@ async function crawlUrls(state: CrawlerState, page: Page, root: string) {
     if (pageResult.hrefs) {
       state.addHrefs(pageResult.hrefs, pageResult.url, isInternal, root, state)
     }
+    info('- checked url', url,
+      'internal', isInternal,
+      'checked', Object.keys(state.checked).length,
+      'todo', state.todo.length,
+      'todo external', state.todoExternal.length,
+      'issues', collectIssues(state.results).length)
+
     const issues = collectIssues([pageResult])
     if (issues.length > 0) {
+      info('url', url, 'had',issues.length,'issues:')
       info(createReportTextShort([pageResult]))
     }
     if (state.params.report) {

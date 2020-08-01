@@ -82,7 +82,7 @@ export class PageProcessor {
           parts.push(handler.name)
         }
         const str = `${parts.join(':')} threw an error`
-        info(`- ${str}`, err)
+        info(`- pageReadyHandler failed ${str}`, err)
         err.message = `${str}: ${err.message}`
         pageResult.errors.push(errorToObject(err))
       }

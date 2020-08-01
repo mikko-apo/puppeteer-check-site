@@ -38,7 +38,7 @@ export function createReportHtml(state: CrawlerState) {
   if (state.processing.length > 0) {
     context.processing = state.processing
   }
-  const source = __dirname + '/reports/default.html'
+  const source = __dirname + '/default.html'
   const template = Handlebars.compile(readFile(source))
   return template(context)
 }
