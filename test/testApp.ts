@@ -17,6 +17,7 @@ export interface SiteData {
 export interface TestServer {
   siteData: SiteData
   makeUrl: (path: string) => string
+  close: () => void
 }
 
 function wrap(a: any): any[] {
@@ -58,7 +59,8 @@ export function launch(): TestServer {
   const server = app.listen(0);
   const testServer: TestServer = {
     siteData: {},
-    makeUrl: (path) => `http://localhost:${(server.address() as any).port}/${path}`
+    makeUrl: (path) => `http://localhost:${(server.address() as any).port}/${path}`,
+    close: () => server.close()
   };
   app.use((req, res, next) => {
     let path = req.url.substring(1);
